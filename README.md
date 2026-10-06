@@ -87,6 +87,12 @@ Unit tests cover chord formulas and range, inversions, weighted generation, exac
 
 Browser automation cannot establish subjective piano timbre or physical-device audio behavior. Listen once on your intended phone/headphones before sharing broadly, especially for device mute switches, interruptions, and volume settings.
 
-## Audio credits
+## License
+
+The application code, documentation, and original artwork are licensed under the [MIT License](LICENSE.md). Third-party dependencies and audio samples retain their own licenses.
+
+### Audio license and credits
+
+The bundled piano samples in `public/audio/` are licensed separately under **CC BY 3.0**, not MIT. Preserve their attribution and license notices when redistributing them.
 
 Salamander Grand Piano by **Alexander Holm**, licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). MP3 samples are bundled unchanged from the [Tone.js audio repository](https://github.com/Tonejs/audio/tree/master/salamander). Playback applies pitch and volume adjustments. Attribution is included in the in-app help and in `public/audio/ATTRIBUTION.txt`, alongside the upstream README. No endorsement is implied.
