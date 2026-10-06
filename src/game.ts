@@ -17,9 +17,9 @@ export const REQUIRED_TYPES: ChordType[] = ['major', 'minor'];
 export type Counts = Record<ChordType, number>;
 export interface Settings { types: ChordType[]; inversions: boolean }
 export interface Target { type: ChordType; notes: number[]; root: number; inversion: number }
-export type Phase = 'setup' | 'playing' | 'success' | 'milestone' | 'complete';
+export type Phase = 'setup' | 'playing' | 'success' | 'milestone' | 'finale' | 'complete';
 export interface Game {
-  version: 1;
+  version: 2;
   settings: Settings;
   phase: Phase;
   target: Target | null;
@@ -29,13 +29,14 @@ export interface Game {
   round: number;
   hintsSeen: boolean;
   feedback: 'none' | 'incorrect';
+  wrongAttempts: number;
 }
-export const MILESTONE_SCORES = [5, 10, 15] as const;
+export const MILESTONE_SCORES = [5, 10] as const;
 
 export function initialGame(settings: Settings = { types: [...REQUIRED_TYPES], inversions: false }, hintsSeen = false): Game {
-  return { version: 1, settings, phase: 'setup', target: null, selected: [],
+  return { version: 2, settings, phase: 'setup', target: null, selected: [],
     counts: Object.fromEntries(CHORD_TYPES.map(type => [type, 0])) as Counts,
-    total: 0, round: 0, hintsSeen, feedback: 'none' };
+    total: 0, round: 0, hintsSeen, feedback: 'none', wrongAttempts: 0 };
 }
 
 export function sameNotes(a: readonly number[], b: readonly number[]): boolean {
@@ -94,17 +95,18 @@ export function toggleNote(game: Game, note: number): Game {
 
 export function submitGuess(game: Game): Game {
   if (game.phase !== 'playing' || !game.target || !game.selected.length) return game;
-  if (!sameNotes(game.selected, game.target.notes)) return { ...game, feedback: 'incorrect' };
+  if (!sameNotes(game.selected, game.target.notes)) return { ...game, feedback: 'incorrect', wrongAttempts: game.wrongAttempts + 1 };
   const total = game.total + 1;
+  const counts = { ...game.counts, [game.target.type]: game.counts[game.target.type] + 1 };
   return { ...game, total, selected: [], feedback: 'none',
-    counts: { ...game.counts, [game.target.type]: game.counts[game.target.type] + 1 },
-    phase: MILESTONE_SCORES.some(score => score === total) ? 'milestone' : 'success' };
+    counts,
+    phase: isComplete({ ...game, total, counts }) ? 'finale' : MILESTONE_SCORES.some(score => score === total) ? 'milestone' : 'success' };
 }
 
 export function nextRound(game: Game, random = Math.random): Game {
-  if (!['playing', 'success', 'milestone'].includes(game.phase)) return game;
+  if (!['playing', 'success', 'milestone', 'finale'].includes(game.phase)) return game;
   if (isComplete(game)) return { ...game, phase: 'complete', selected: [] };
-  return { ...game, phase: 'playing', selected: [], feedback: 'none', round: game.round + 1,
+  return { ...game, phase: 'playing', selected: [], feedback: 'none', wrongAttempts: 0, round: game.round + 1,
     target: generateTarget(game.settings, game.counts, game.target, random) };
 }
 

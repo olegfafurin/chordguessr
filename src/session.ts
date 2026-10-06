@@ -1,6 +1,7 @@
 import { CHORD_TYPES, REQUIRED_TYPES, LOW_NOTE, HIGH_NOTE, MILESTONE_SCORES, initialGame, isComplete, sameNotes, voicings, type ChordType, type Game, type Settings } from './game';
 
-export const SESSION_KEY = 'chordguessr.session.v1';
+export const SESSION_KEY = 'chordguessr.session.v2';
+const LEGACY_SESSION_KEY = 'chordguessr.session.v1';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
@@ -15,32 +16,41 @@ export function validSettings(value: unknown): value is Settings {
 export function parseSession(raw: string | null): Game | null {
   try {
     const value: unknown = JSON.parse(raw ?? 'null');
-    if (!isRecord(value) || value.version !== 1 || !validSettings(value.settings) || !isRecord(value.counts)) return null;
-    if (!['setup', 'playing', 'success', 'milestone', 'complete'].includes(value.phase as string) || !isNotes(value.selected)) return null;
+    if (!isRecord(value) || ![1, 2].includes(value.version as number) || !validSettings(value.settings) || !isRecord(value.counts)) return null;
+    const legacy = value.version === 1;
+    if (legacy) value.wrongAttempts = value.feedback === 'incorrect' ? 1 : 0;
+    if (!['setup', 'playing', 'success', 'milestone', 'finale', 'complete'].includes(value.phase as string) || !isNotes(value.selected)) return null;
     if (!isCount(value.total) || !isCount(value.round) || typeof value.hintsSeen !== 'boolean' || !['none', 'incorrect'].includes(value.feedback as string)) return null;
+    if (!isCount(value.wrongAttempts) || (value.feedback === 'incorrect' && value.wrongAttempts === 0)) return null;
     const counts = value.counts;
     if (!CHORD_TYPES.every(type => isCount(counts[type]) && ((value.settings as Settings).types.includes(type) || counts[type] === 0))) return null;
     if (CHORD_TYPES.reduce((sum, type) => sum + (counts[type] as number), 0) !== value.total) return null;
     if (value.phase === 'setup') {
-      if (value.target !== null || value.total !== 0 || value.round !== 0 || value.selected.length) return null;
+      if (value.target !== null || value.total !== 0 || value.round !== 0 || value.selected.length || value.wrongAttempts !== 0) return null;
     } else {
       const target = value.target;
       if (!isRecord(target) || !value.settings.types.includes(target.type as ChordType) || !isNotes(target.notes) || value.round < 1) return null;
       if (!voicings(target.type as ChordType, value.settings.inversions).some(candidate => candidate.root === target.root && candidate.inversion === target.inversion && sameNotes(candidate.notes, target.notes as number[]))) return null;
-      const awarded = ['success', 'milestone', 'complete'].includes(value.phase as string);
+      const awarded = ['success', 'milestone', 'finale', 'complete'].includes(value.phase as string);
       if (awarded && (value.selected.length || value.total < 1 || !(counts[target.type as string] as number))) return null;
       if (value.total > value.round || (value.phase === 'playing' && value.total >= value.round)) return null;
+      const finished = isComplete(value as unknown as Game);
+      if (legacy && value.phase === 'milestone' && value.total === 15) value.phase = finished ? 'finale' : 'success';
+      if (legacy && value.phase === 'success' && finished) value.phase = 'finale';
       if (value.phase === 'milestone' && !MILESTONE_SCORES.some(score => score === value.total)) return null;
-      if (value.phase === 'success' && MILESTONE_SCORES.some(score => score === value.total)) return null;
-      if (value.phase === 'complete' && !isComplete(value as unknown as Game)) return null;
-      if (value.phase === 'playing' && isComplete(value as unknown as Game)) return null;
+      if (value.phase === 'success' && (MILESTONE_SCORES.some(score => score === value.total) || finished)) return null;
+      if (['finale', 'complete'].includes(value.phase as string) && !finished) return null;
+      if (value.phase === 'playing' && finished) return null;
     }
-    return value as unknown as Game;
+    return { ...value, version: 2 } as unknown as Game;
   } catch { return null; }
 }
 
 export function loadSession(storage?: StorageLike): Game {
-  try { return parseSession((storage ?? window.sessionStorage).getItem(SESSION_KEY)) ?? initialGame(); }
+  try {
+    const source = storage ?? window.sessionStorage;
+    return parseSession(source.getItem(SESSION_KEY) ?? source.getItem(LEGACY_SESSION_KEY)) ?? initialGame();
+  }
   catch { return initialGame(); }
 }
 

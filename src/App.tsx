@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowRight, Check, CircleHelp, Headphones, Leaf, ListMusic, LoaderCircle, Play, Plus, RotateCcw, SkipForward, Sparkles, Trophy, Volume2, X } from 'lucide-react';
 import { CHORDS, CHORD_TYPES, REQUIRED_TYPES, initialGame, isComplete, nextRound, startGame, submitGuess, toggleNote, type ChordType, type Game } from './game';
 import { loadSession, saveSession } from './session';
 import { PianoAudio, type PlaybackKind } from './audio';
 import { Confetti, IconButton, Keyboard, Modal, Wave } from './components';
-import { milestones } from './milestones';
+import { completionCelebration, milestones } from './milestones';
+import { ACCENTS, applyTheme, loadTheme, saveTheme, type Accent } from './theme';
 
 const helpItems = [
   { icon: Volume2, title: 'Listen again', text: 'Replay the chord you’re trying to find.' },
   { icon: Play, title: 'Hear your guess', text: 'Play the keys you have selected.' },
   { icon: Check, title: 'Check your chord', text: 'Play and submit your guess. Every note and octave must match.' },
-  { icon: ListMusic, title: 'One note at a time', text: 'Hear the target from its lowest note to its highest.' },
+  { icon: ListMusic, title: 'One note at a time', text: 'Unlocks after your first wrong guess each round. Hear the target from lowest to highest.' },
   { icon: SkipForward, title: 'A fresh chord', text: 'Skip this round. There’s no penalty.' },
 ];
 
@@ -20,35 +21,47 @@ export default function App() {
   gameRef.current = game;
   const [helpOpen, setHelpOpen] = useState(!game.hintsSeen);
   const [restartOpen, setRestartOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [theme, setTheme] = useState(loadTheme);
   const [playing, setPlaying] = useState<PlaybackKind | null>(null);
   const [busy, setBusy] = useState(false);
   const [audioError, setAudioError] = useState('');
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const audio = useRef<PianoAudio | null>(null);
   const actionPending = useRef(false);
+  const pendingPlayback = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelPendingPlayback = useCallback(() => {
+    clearTimeout(pendingPlayback.current);
+    pendingPlayback.current = undefined;
+  }, []);
+
+  useEffect(() => { applyTheme(theme); saveTheme(theme); }, [theme]);
 
   useEffect(() => {
     const piano = new PianoAudio();
     piano.onPlayback = setPlaying;
     audio.current = piano;
-    const onVisibility = () => { if (document.hidden) piano.stop(); };
+    const onVisibility = () => { if (document.hidden) { cancelPendingPlayback(); piano.stop(); } };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => { document.removeEventListener('visibilitychange', onVisibility); piano.onPlayback = () => {}; piano.dispose(); };
-  }, []);
+    return () => { cancelPendingPlayback(); document.removeEventListener('visibilitychange', onVisibility); piano.onPlayback = () => {}; piano.dispose(); };
+  }, [cancelPendingPlayback]);
 
   useEffect(() => { setStorageUnavailable(!saveSession(game)); }, [game]);
 
   const play = useCallback(async (notes: readonly number[], kind: PlaybackKind) => {
+    cancelPendingPlayback();
     setAudioError('');
     try { await audio.current?.play(notes, kind); }
     catch { setAudioError('The piano couldn’t load. Check your connection and tap a play control to try again.'); }
-  }, []);
+  }, [cancelPendingPlayback]);
 
   useEffect(() => {
-    if (game.phase === 'playing' && audio.current?.ready && !document.hidden) void play(game.target!.notes, 'target');
-    // Only a new round or returning from a milestone should autoplay, never key selection or a wrong answer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.phase, game.round, play]);
+    if (game.phase !== 'playing' || !audio.current?.ready || document.hidden) return;
+    // Run after the layout commits; the first chord gets a full second of quiet.
+    // Manual playback, a skip, restart, or hiding the tab cancels this pending sound.
+    pendingPlayback.current = setTimeout(() => void play(gameRef.current.target!.notes, 'target'), game.round === 1 ? 1000 : 0);
+    return cancelPendingPlayback;
+  }, [game.phase, game.round, play, cancelPendingPlayback]);
 
   useEffect(() => {
     if (game.phase !== 'success') return;
@@ -78,6 +91,7 @@ export default function App() {
   async function submit() {
     if (actionPending.current || gameRef.current.phase !== 'playing' || !gameRef.current.selected.length) return;
     actionPending.current = true;
+    cancelPendingPlayback();
     setBusy(true);
     setAudioError('');
     try {
@@ -93,6 +107,7 @@ export default function App() {
   async function advance() {
     if (actionPending.current) return;
     actionPending.current = true;
+    cancelPendingPlayback();
     setBusy(true);
     setAudioError('');
     audio.current?.stop();
@@ -105,6 +120,7 @@ export default function App() {
   }
   function closeHelp() { setHelpOpen(false); setGame(current => ({ ...current, hintsSeen: true })); }
   function restart() {
+    cancelPendingPlayback();
     audio.current?.stop();
     setRestartOpen(false);
     setAudioError('');
@@ -117,17 +133,18 @@ export default function App() {
 
   const setup = game.phase === 'setup';
   const complete = game.phase === 'complete';
-  const success = game.phase === 'success' || game.phase === 'milestone';
+  const success = ['success', 'milestone', 'finale'].includes(game.phase);
   const locked = game.phase !== 'playing' || busy;
-  const milestone = game.phase === 'milestone' ? milestones[game.total] : null;
+  const milestone = game.phase === 'finale' ? completionCelebration : game.phase === 'milestone' ? milestones[game.total] : null;
   const mastered = game.settings.types.filter(type => game.counts[type] >= 2).length;
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${setup ? 'setup-shell' : 'game-shell'}`}>
     <header className="header">
       <a className="wordmark" href="/" aria-label="Chordguessr home"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>chordguessr<span className="brand-period">.</span></a>
       <div className="header-actions">
-        {!setup && <IconButton label="Start a new game" icon={RotateCcw} disabled={busy} onClick={() => { audio.current?.stop(); setRestartOpen(true); }} className="quiet" />}
+        {!setup && <IconButton label="Start a new game" icon={RotateCcw} disabled={busy} onClick={() => { cancelPendingPlayback(); audio.current?.stop(); setRestartOpen(true); }} className="quiet" />}
         <IconButton label="How to play" icon={CircleHelp} onClick={() => setHelpOpen(true)} className="quiet" />
+        <button type="button" className="icon-button quiet theme-trigger" aria-label="Change colors" title="Change colors" onClick={() => setThemeOpen(true)}><span aria-hidden="true" /></button>
       </div>
     </header>
 
@@ -160,25 +177,25 @@ export default function App() {
           <div className="progress-heading"><span className="eyebrow">{complete ? 'SESSION COMPLETE' : 'LISTEN. EXPLORE. DISCOVER.'}</span><span className="score"><strong>{game.total}</strong><span> / 15 <span className="score-word">found</span></span></span></div>
           <div className="progress-track" role="progressbar" aria-label="Correct chords toward 15" aria-valuemin={0} aria-valuemax={15} aria-valuenow={Math.min(game.total, 15)}><span style={{ width: `${Math.min(game.total / 15, 1) * 100}%` }} /></div>
           <div className={`listening-space ${success ? 'celebrating' : ''}`}>
-            <Wave active={playing !== null && playing !== 'note'} />
-            {success && <Confetti />}
-            <div className="listening-content">
-              <span className="round-label">{complete ? 'BEAUTIFULLY PLAYED' : `ROUND ${String(game.round).padStart(2, '0')}`}</span>
-              <h1>{complete ? <>A little more <em>musical.</em></> : success ? <>That’s <em>the one.</em></> : <>What do you <em>hear?</em></>}</h1>
-              <p aria-live="polite" className={game.feedback === 'incorrect' ? 'incorrect' : ''}>
-                {complete ? 'Every chord family explored. Every little win earned.' : success ? 'Beautifully found. Trust those ears.' : game.feedback === 'incorrect' ? 'Not quite yet. Listen again — you’ve got this.' : playing === 'sequence' ? 'One note at a time. Follow the melody.' : playing === 'target' ? 'Let the notes settle in.' : playing === 'guess' ? 'Here’s the harmony you found.' : 'A few notes. One little discovery.'}
-              </p>
-              <IconButton label={complete ? 'Start another game' : 'Replay current chord'} icon={complete ? RotateCcw : success ? Check : Volume2}
-                className={`listen-button ${success ? 'success-button' : ''}`} disabled={busy || success}
-                onClick={() => complete ? restart() : void play(game.target!.notes, 'target')} active={playing === 'target'} />
-              <span className="listen-caption">{complete ? 'Another little adventure?' : success ? 'Nicely done' : 'Tap to listen'}</span>
+            <span className="round-label">{complete ? 'BEAUTIFULLY PLAYED' : `ROUND ${String(game.round).padStart(2, '0')}`}</span>
+            <div className="listening-row" role="group" aria-label="Target chord controls">
+              <IconButton label="Play chord note by note" icon={ListMusic} className="side-listen" disabled={locked || game.wrongAttempts === 0} onClick={() => { if (game.wrongAttempts > 0) void play(game.target!.notes, 'sequence'); }} active={playing === 'sequence'} />
+              <div className="listen-target">
+                <Wave active={playing !== null && playing !== 'note'} />
+                {success && <Confetti />}
+                <IconButton label={complete ? 'Start another game' : 'Replay current chord'} icon={complete ? RotateCcw : success ? Check : Volume2}
+                  className={`listen-button ${success ? 'success-button' : ''}`} disabled={busy || success}
+                  onClick={() => complete ? restart() : void play(game.target!.notes, 'target')} active={playing === 'target'} />
+              </div>
+              <IconButton label="Skip current round" icon={SkipForward} className="side-listen" disabled={locked} onClick={() => void advance()} />
             </div>
+            <span className="listen-caption">{complete ? 'Another little adventure?' : success ? 'Nicely done' : 'Tap to listen'}</span>
+            <p aria-live="polite" className={`round-feedback ${game.feedback === 'incorrect' ? 'incorrect' : ''}`}>
+              {success ? 'Beautifully found. Trust those ears.' : game.feedback === 'incorrect' ? 'Not quite yet. Listen again — you’ve got this.' : ''}
+            </p>
           </div>
           {!complete && <div className="controls" role="group" aria-label="Chord controls">
             <IconButton label="Play current guess" icon={Play} disabled={locked || !game.selected.length} onClick={() => void play(game.selected, 'guess')} active={playing === 'guess'} />
-            <IconButton label="Play chord note by note" icon={ListMusic} disabled={locked} onClick={() => void play(game.target!.notes, 'sequence')} active={playing === 'sequence'} />
-            <span className="control-divider" />
-            <IconButton label="Skip current round" icon={SkipForward} disabled={locked} onClick={() => void advance()} />
             <IconButton label="Submit current guess" icon={busy ? LoaderCircle : Check} className={`primary submit-button ${busy ? 'loading' : ''}`} disabled={locked || !game.selected.length} onClick={() => void submit()} />
           </div>}
         </section>
@@ -192,7 +209,7 @@ export default function App() {
         <section className="type-progress" aria-label="Chord type progress">
           <div className="section-heading"><h2>Your growing repertoire</h2><span>{mastered} / {game.settings.types.length} explored twice</span></div>
           <div className="type-chips">{game.settings.types.map(type => <span key={type} className={`type-chip ${game.counts[type] >= 2 ? 'mastered' : ''}`} title={`${CHORDS[type].label}: ${game.counts[type]} correct`}>
-            {CHORDS[type].label}<span className="count-dots" aria-hidden="true"><i className={game.counts[type] >= 1 ? 'filled' : ''} /><i className={game.counts[type] >= 2 ? 'filled' : ''} /></span><span className="sr-only">{game.counts[type]} correct</span>
+            <span className="type-name">{CHORDS[type].label}</span><span className="count-dots" aria-hidden="true"><i className={game.counts[type] >= 1 ? 'filled' : ''} /><i className={game.counts[type] >= 2 ? 'filled' : ''} /></span><span className="sr-only">{game.counts[type]} correct</span>
           </span>)}</div>
           {game.total >= 15 && !complete && !isComplete(game) && <p className="extra-practice">Fifteen found! Keep going until every chord family has two little wins.</p>}
         </section>
@@ -202,6 +219,21 @@ export default function App() {
     </main>
 
     <footer><span><Leaf size={13} aria-hidden="true" /> A little practice. A better ear.</span><span>Made for the joy of listening.</span></footer>
+
+    {themeOpen && <Modal title="Your colors." onClose={() => setThemeOpen(false)} className="theme-modal">
+      <fieldset className="theme-fieldset"><legend>Accent</legend><div className="accent-options">
+        {(Object.keys(ACCENTS) as Accent[]).map(accent => <label key={accent} className="accent-choice" style={{ '--swatch': `hsl(${ACCENTS[accent].hue} ${ACCENTS[accent].saturation}% 81%)` } as CSSProperties}>
+          <input type="radio" name="accent" aria-label={ACCENTS[accent].label} checked={theme.accent === accent} onChange={() => setTheme(current => ({ ...current, accent }))} />
+          <span>{ACCENTS[accent].label}</span>
+        </label>)}
+      </div></fieldset>
+      <fieldset className="theme-fieldset"><legend>Background</legend><div className="background-options">
+        {(['cold', 'warm'] as const).map(background => <label key={background} className={`background-choice ${background}`}>
+          <input type="radio" name="background" checked={theme.background === background} onChange={() => setTheme(current => ({ ...current, background }))} />
+          <span>{background === 'cold' ? 'Cold' : 'Warm'}</span>
+        </label>)}
+      </div></fieldset>
+    </Modal>}
 
     {helpOpen && <Modal title="A little guide to listening." onClose={closeHelp} className="help-modal">
       <p className="modal-intro">Hear a chord, then find its exact notes on the piano. Tap keys to select or release them.</p>
@@ -220,7 +252,6 @@ export default function App() {
       <div className="milestone-art"><img src={milestone.image} alt={milestone.alt} /><Confetti /></div>
       <span className="eyebrow">{game.total} CHORDS FOUND</span>
       <p className="modal-intro">{milestone.message}</p>
-      {game.total === 15 && !isComplete(game) && <p className="milestone-note">A few chord families still need their second win. Your adventure continues.</p>}
       {audioError && <p role="alert" className="error-message">{audioError}</p>}
       <div className="modal-action"><span>{isComplete(game) ? 'Celebrate your session' : 'Follow the next note'}</span><IconButton label="Continue" icon={busy ? LoaderCircle : isComplete(game) ? Trophy : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} disabled={busy} onClick={() => void advance()} /></div>
     </Modal>}

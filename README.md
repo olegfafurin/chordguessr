@@ -5,14 +5,16 @@ A small piano ear-training game: listen to a chord and find its exact notes. Bui
 ## Play
 
 1. Read the first-use control guide, then choose your chord palette. Major and minor are always enabled; diminished, augmented, dominant 7th, major 7th, minor 7th, half-diminished 7th, and diminished 7th are individually optional. Enable inversions for an extra challenge.
-2. Tap the arrow to start. The first gesture unlocks browser audio and loads the bundled piano samples. The target chord plays automatically.
+2. Tap the arrow to start. The first gesture unlocks browser audio and loads the bundled piano samples. Once the game layout appears, the first chord plays automatically after one second. Manual playback or skipping cancels that pending sound.
 3. Select notes on the unlabeled C3–B4 keyboard. Selecting a released key briefly plays it; selecting it again releases it silently.
-4. Use the icon controls to replay the target, play your selection, submit it, hear the target note by note, or skip. Help remains available from the question-mark icon.
+4. The main listen button replays the target. The smaller button on its left plays the target note by note and unlocks after your first wrong submission in each round; the button on its right skips. The lower row plays or submits your selection. Help remains available from the question-mark icon.
 5. Match every exact note and octave, with no extra or missing keys. Incorrect guesses preserve the selection and allow unlimited attempts. Correct guesses play a celebration and advance automatically.
 
-The score counts correct rounds. Pictures celebrate 5, 10, and 15 correct guesses and wait for Continue. A session finishes only after **at least 15 correct guesses and at least two correct guesses for every enabled chord type**. Selecting all nine types therefore requires at least 18 correct guesses. Lower-scoring types are sampled more often, with weight `1 / (1 + correctCountForType)`. Skipping does not affect counts.
+The score counts correct rounds. Pictures celebrate 5 and 10 correct guesses and wait for Continue. The final picture appears when the session actually finishes: **at least 15 correct guesses and at least two correct guesses for every enabled chord type**. Selecting all nine types therefore requires at least 18 correct guesses. Reaching 15 without that coverage advances normally. Lower-scoring types are sampled more often, with weight `1 / (1 + correctCountForType)`. Skipping does not affect counts and resets the note-by-note hint lock.
 
 Chord settings stay fixed during play. The circular-arrow New Game control asks before clearing progress and returning to setup. The previous palette remains selected for easy replay.
+
+Use the color circle in the upper-right corner to choose light pink, lavender, sky blue, mint, peach, or butter yellow accents and a cold or warm background. Colors apply immediately across the interface and persist through refreshes and new games within the tab session. The default is **cold background / light pink accent**.
 
 ## Run locally
 
@@ -50,22 +52,24 @@ Vercel serves the JavaScript, styles, artwork, and piano samples. There is no se
 
 ## Session, audio, and accessibility
 
-- The complete game state lives in `sessionStorage` under `chordguessr.session.v1`, including settings, current chord, selected keys, counts, first-use guide status, and pending celebrations. Refreshing preserves the session. It is intended to last for the current tab; browser tab/session recovery can retain it longer. Separate tabs can diverge independently.
+- The complete game state lives in `sessionStorage` under `chordguessr.session.v2`, including settings, current chord, selected keys, counts, wrong attempts in the current round, first-use guide status, and pending celebrations. Version 1 sessions migrate automatically. Theme preferences use `chordguessr.theme.v1`. Refreshing preserves the session. It is intended to last for the current tab; browser tab/session recovery can retain it longer. Separate tabs can diverge independently.
 - Invalid or incompatible saved data returns to setup. If storage is unavailable, play continues in memory with a notice that refreshing will lose progress.
 - Restoring a page does not autoplay. Tap a playback control or select a new note to resume audio. Audio-load failures preserve the game and provide a retry message.
-- Piano playback uses nine locally bundled Salamander Grand Piano samples with small pitch shifts for neighboring notes, gain envelopes, and Web Audio scheduling. Target and guess playback trigger the sound-wave animation. New playback replaces previous playback; hiding the page stops sound.
+- Piano playback uses nine locally bundled Salamander Grand Piano samples with small pitch shifts for neighboring notes, gain envelopes, and Web Audio scheduling. Target and guess playback trigger a sound wave centered behind the main listen button, with smooth fades. New playback replaces previous playback; hiding the page stops sound.
 - Portrait mobile layouts stack the two octaves. Desktop and sufficiently wide landscape layouts show a continuous two-octave keyboard. All keys and controls are keyboard-focusable. Keys expose note names and pressed state to assistive technology while remaining visually unlabeled.
 - Dialogs trap focus and restore it when closed. Animations honor `prefers-reduced-motion`.
 
 ## Customize milestone pictures
 
-Edit `src/milestones.ts` to change each milestone’s title, message, image URL, and alternative text. The included original illustrations are:
+Edit `src/milestones.ts` to change each milestone’s title, message, image URL, and alternative text. `milestones` configures the 5- and 10-point celebrations; `completionCelebration` configures the final celebration at any qualifying score. The included original illustrations are:
 
 ```text
 public/milestones/5.svg
 public/milestones/10.svg
 public/milestones/15.svg
 ```
+
+The filename `15.svg` is retained for the final artwork, but its display is tied to game completion, not a fixed score.
 
 Replace them with your own SVGs, or place PNG/JPEG/WebP files in that directory and update the configuration. Public asset URLs start with `/milestones/`, without `public/`. Rebuild and redeploy after changing them. The illustration area is approximately square and scales the full image without cropping.
 

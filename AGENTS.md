@@ -10,17 +10,22 @@ Chordguessr is a mobile-first piano chord guessing game. It is a static React/Ty
 - Generated chords fit entirely in range. Favor types with fewer correct guesses using `1 / (1 + count)` and avoid consecutive identical note sets.
 - Selecting a released key plays it briefly; releasing a selected key makes no new sound. Submitting plays the guess whether correct or incorrect.
 - Wrong answers retain selection. Correct answers increment the total and one type count exactly once, clear keys, and advance after feedback. Skips do not score.
-- Milestones at 5, 10, and 15 require Continue. Finish only when total >= 15 AND each enabled type has count >= 2. Show any milestone before the completion screen.
+- Milestones at 5 and 10 require Continue. Finish only when total >= 15 AND each enabled type has count >= 2. The final celebration (`finale` phase) appears at that actual finish, followed by the completion screen on Continue. Reaching 15 without type coverage is an ordinary successful round.
+- Note-by-note playback is disabled until the first wrong submission in the current round. Preserve the unlock while editing notes and refreshing; reset it on every new round.
+- The first target plays one second after the game layout renders. Cancel pending playback on manual playback, submission, skipping, restarting, unmounting, or hiding the tab.
+- Keep note-by-note and skip controls to the left and right of the larger main listen button. Center the fading sound wave behind that button. The lower control row contains only guess playback and submission.
+- Themes use shared CSS shade variables, with cold/light pink as the default. Store theme choice separately from game progress so starting over preserves it. Keep the compact portrait game usable without page scrolling on common small phones; allow natural overflow when accessibility zoom or unusually small screens require it.
 - Save the full session in `sessionStorage`, including transient celebration phases. Refresh must not award a round twice or bypass a milestone. Restores require a user gesture for sound.
 - Game controls use pictograms only, with accessible names. First-use text explains them; help remains available.
 
 ## Architecture
 
 - `src/game.ts`: pure chord definitions, generation, selection, scoring, and round transitions. Inject randomness for deterministic tests.
-- `src/session.ts`: versioned persistence and validation. Untrusted or corrupt storage must recover to setup; unavailable storage must not block play.
+- `src/session.ts`: versioned persistence and validation; v1 sessions migrate to v2 without losing progress. Untrusted or corrupt storage must recover to setup; unavailable storage must not block play.
 - `src/audio.ts`: one lazy Web Audio context, bundled sampled piano, cancellation, and playback-state callbacks. Resume audio inside a user gesture before asynchronous work. Do not introduce oscillator-only substitutes or external sample URLs.
 - `src/App.tsx` and `src/components.tsx`: React orchestration and accessible controls/dialogs/keyboard. `src/styles.css`: responsive layout and reduced-motion styles.
 - `src/milestones.ts` and `public/milestones/`: editable celebration copy and artwork. Keep audio credits alongside samples and visible in help.
+- `src/theme.ts`: accent definitions, background choices, and session-scoped appearance preferences. Derive UI colors from the theme tokens in CSS rather than adding fixed green or pink styles.
 
 ## Working rules
 

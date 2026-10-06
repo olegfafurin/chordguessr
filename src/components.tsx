@@ -51,5 +51,5 @@ export function Wave({ active }: { active: boolean }) {
 }
 
 export function Confetti() {
-  return <div className="confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, i) => <i key={i} style={{ '--angle': `${i * 22.5}deg`, '--distance': `${80 + i % 4 * 24}px`, '--confetti-color': ['#b07a36', '#536e5b', '#cbaea0'][i % 3] } as CSSProperties} />)}</div>;
+  return <div className="confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, i) => <i key={i} style={{ '--angle': `${i * 22.5}deg`, '--distance': `${80 + i % 4 * 24}px`, '--confetti-color': ['var(--accent-strong)', 'var(--accent)', 'var(--accent-mid)'][i % 3] } as CSSProperties} />)}</div>;
 }

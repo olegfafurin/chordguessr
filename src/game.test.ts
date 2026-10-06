@@ -60,9 +60,11 @@ describe('rounds and scoring', () => {
     expect(game.selected).toEqual([48]);
     game = submitGuess(game);
     expect(game.feedback).toBe('incorrect');
+    expect(game.wrongAttempts).toBe(1);
     expect(game.selected).toEqual([48]);
     expect(game.total).toBe(0);
     expect(toggleNote(game, 48).selected).toEqual([]);
+    expect(toggleNote(game, 48).wrongAttempts).toBe(1);
     expect(toggleNote(game, 72)).toBe(game);
   });
   it('awards each round exactly once and clears keys', () => {
@@ -79,21 +81,41 @@ describe('rounds and scoring', () => {
     expect(next.phase).toBe('playing');
   });
   it('skips without increasing any counters', () => {
-    const game = toggleNote(startGame(initialGame()), 48);
+    const game = submitGuess(toggleNote(startGame(initialGame()), 48));
     const skipped = nextRound(game);
     expect(skipped.total).toBe(0);
     expect(skipped.counts).toEqual(game.counts);
     expect(skipped.round).toBe(2);
     expect(skipped.selected).toEqual([]);
+    expect(skipped.wrongAttempts).toBe(0);
     expect(sameNotes(skipped.target!.notes, game.target!.notes)).toBe(false);
   });
-  it.each([5, 10, 15])('pauses for milestone %i before advancing or completing', total => {
+  it.each([5, 10])('pauses for milestone %i before advancing', total => {
     const game = startGame(initialGame());
     const almost = { ...game, total: total - 1, round: total, counts: { ...game.counts, major: total - 3, minor: 2 } };
     const scored = correct(almost);
     expect(scored.total).toBe(total);
     expect(scored.phase).toBe('milestone');
-    expect(nextRound(scored).phase).toBe(total === 15 ? 'complete' : 'playing');
+    expect(nextRound(scored).phase).toBe('playing');
+  });
+  it('celebrates the actual finish, including finishes after 15', () => {
+    const game = startGame(initialGame());
+    for (const total of [15, 16, 23]) {
+      const almost = { ...game, total: total - 1, round: total, counts: { ...game.counts, major: total - 3, minor: 2 } };
+      const scored = correct(almost);
+      expect(scored.phase).toBe('finale');
+      expect(submitGuess(scored)).toBe(scored);
+      expect(nextRound(scored).phase).toBe('complete');
+    }
+  });
+  it('does not show the final celebration at 15 while a type is still underguessed', () => {
+    const game = startGame(initialGame());
+    const target = { type: 'major' as const, root: 48, inversion: 0, notes: [48, 52, 55] };
+    const almost = { ...game, target, total: 14, round: 15, counts: { ...game.counts, major: 13, minor: 1 } };
+    const scored = correct(almost);
+    expect(scored.total).toBe(15);
+    expect(scored.phase).toBe('success');
+    expect(nextRound(scored).phase).toBe('playing');
   });
   it('continues beyond 15 until every type has two correct answers', () => {
     const game = startGame(initialGame());

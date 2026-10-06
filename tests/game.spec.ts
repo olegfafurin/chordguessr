@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initialGame, noteLabel, startGame, submitGuess, type Game } from '../src/game';
+import { CHORD_TYPES, initialGame, noteLabel, startGame, submitGuess, type Game } from '../src/game';
 import { SESSION_KEY } from '../src/session';
 
 async function seed(page: Page, game: Game) {
@@ -74,7 +74,7 @@ test('skip and confirmed restart clear selections without accidental progress lo
   expect((await state(page)).total).toBe(0);
 });
 
-test('milestone 15 survives refresh and appears before completion', async ({ page }) => {
+test('a final celebration at 15 survives refresh and appears before completion', async ({ page }) => {
   const game = startGame(initialGame());
   await seed(page, { ...game, total: 14, round: 15, counts: { ...game.counts, major: 7, minor: 7 } });
   await chooseTarget(page);
@@ -97,6 +97,11 @@ test('plays beyond 15 until the last type is guessed twice', async ({ page }) =>
   await expect(page.getByText('Fifteen found! Keep going', { exact: false })).toBeVisible();
   await chooseTarget(page);
   await page.getByRole('button', { name: 'Submit current guess' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('16 CHORDS FOUND')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText('SESSION COMPLETE')).toBeVisible();
   expect((await state(page)).total).toBe(16);
 });
@@ -152,7 +157,7 @@ test('sample playback schedules piano voices and releasing a key is silent', asy
       return original.apply(this, args);
     };
   });
-  await seed(page, startGame(initialGame()));
+  await seed(page, { ...startGame(initialGame()), wrongAttempts: 1 });
   const voices = () => page.evaluate(() => (window as unknown as { scheduledVoices: number }).scheduledVoices);
   await page.getByRole('button', { name: 'C3', exact: true }).click();
   await expect.poll(voices).toBe(1);
@@ -161,4 +166,118 @@ test('sample playback schedules piano voices and releasing a key is silent', asy
   await page.getByRole('button', { name: 'Play chord note by note' }).click();
   await expect.poll(voices).toBe(1 + (await state(page)).target!.notes.length);
   await expect(page.locator('.wave')).toHaveClass(/wave-active/);
+});
+
+test('note-by-note unlock persists through editing and refresh, then resets on skip', async ({ page }) => {
+  await seed(page, startGame(initialGame()));
+  const hint = page.getByRole('button', { name: 'Play chord note by note' });
+  await expect(hint).toBeDisabled();
+  await page.getByRole('button', { name: 'C3', exact: true }).click();
+  await page.getByRole('button', { name: 'Submit current guess' }).click();
+  await expect(hint).toBeEnabled();
+  await page.getByRole('button', { name: 'C3', exact: true }).click();
+  await expect(hint).toBeEnabled();
+  await page.reload();
+  await expect(hint).toBeEnabled();
+  await hint.click();
+  await expect(page.locator('.wave')).toHaveClass(/wave-active/);
+  await page.getByRole('button', { name: 'Skip current round' }).click();
+  await expect(hint).toBeDisabled();
+  expect((await state(page)).wrongAttempts).toBe(0);
+});
+
+test('target controls flank the centered fading wave; guess controls stay below', async ({ page }) => {
+  await seed(page, startGame(initialGame()));
+  const main = page.getByRole('button', { name: 'Replay current chord' });
+  const center = (await main.boundingBox())!;
+  const left = (await page.getByRole('button', { name: 'Play chord note by note' }).boundingBox())!;
+  const right = (await page.getByRole('button', { name: 'Skip current round' }).boundingBox())!;
+  expect(left.width).toBeLessThan(center.width);
+  expect(center.x - left.x - left.width).toBeGreaterThan(24);
+  expect(right.x - center.x - center.width).toBeGreaterThan(24);
+  expect(Math.abs(left.y + left.height / 2 - center.y - center.height / 2)).toBeLessThan(1);
+  expect(Math.abs(right.y + right.height / 2 - center.y - center.height / 2)).toBeLessThan(1);
+  await expect(page.getByRole('group', { name: 'Chord controls', exact: true }).getByRole('button')).toHaveCount(2);
+  const bottom = (await page.getByRole('button', { name: 'Play current guess' }).boundingBox())!;
+  expect(bottom.y - center.y - center.height).toBeGreaterThan(24);
+  const wave = (await page.locator('.wave').boundingBox())!;
+  expect(Math.abs(wave.x + wave.width / 2 - center.x - center.width / 2)).toBeLessThan(1);
+  expect(Math.abs(wave.y + wave.height / 2 - center.y - center.height / 2)).toBeLessThan(1);
+  await main.click();
+  await expect.poll(() => page.locator('.wave').evaluate(el => Number(getComputedStyle(el).opacity))).toBeGreaterThan(.5);
+  await expect.poll(() => page.locator('.wave').evaluate(el => Number(getComputedStyle(el).opacity))).toBe(0);
+  await expect(page.getByText(/What do you hear|A few notes|Let the notes settle/)).toHaveCount(0);
+});
+
+test('first chord waits one second after the game layout appears', async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as unknown as { layoutAt: number; voiceTimes: number[] };
+    state.layoutAt = 0;
+    state.voiceTimes = [];
+    new MutationObserver(() => {
+      if (!state.layoutAt && document.querySelector('.piano')) state.layoutAt = performance.now();
+    }).observe(document, { childList: true, subtree: true });
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args: Parameters<typeof start>) {
+      state.voiceTimes.push(performance.now());
+      return start.apply(this, args);
+    };
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Got it', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { voiceTimes: number[] }).voiceTimes.length)).toBeGreaterThan(0);
+  const delay = await page.evaluate(() => {
+    const state = window as unknown as { layoutAt: number; voiceTimes: number[] };
+    return state.voiceTimes[0] - state.layoutAt;
+  });
+  expect(delay).toBeGreaterThanOrEqual(950);
+});
+
+test('themes default to cold pink, recolor the piano, and survive refresh and restart', async ({ page }) => {
+  await seed(page, startGame(initialGame()));
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'pink');
+  await expect(page.locator('html')).toHaveAttribute('data-background', 'cold');
+  await page.getByRole('button', { name: 'C3', exact: true }).click();
+  const before = await page.locator('.piano-key.selected').evaluate(el => getComputedStyle(el).backgroundImage);
+  const target = (await state(page)).target;
+  await page.getByRole('button', { name: 'Change colors' }).click();
+  await page.getByRole('radio', { name: 'Sky blue' }).check();
+  await page.getByRole('radio', { name: 'Warm', exact: true }).check();
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  expect(await page.locator('.piano-key.selected').evaluate(el => getComputedStyle(el).backgroundImage)).not.toBe(before);
+  expect((await state(page)).target).toEqual(target);
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'blue');
+  await expect(page.locator('html')).toHaveAttribute('data-background', 'warm');
+  await page.getByRole('button', { name: 'Start a new game' }).click();
+  await page.getByRole('button', { name: 'Confirm new game' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'blue');
+  await expect(page.getByRole('button', { name: 'Start game', exact: true })).toBeVisible();
+});
+
+test('15 correct guesses without type coverage advance without the final picture', async ({ page }) => {
+  const game = startGame(initialGame());
+  game.target = { type: 'major', root: 48, inversion: 0, notes: [48, 52, 55] };
+  await seed(page, { ...game, total: 14, round: 15, counts: { ...game.counts, major: 13, minor: 1 } });
+  await chooseTarget(page);
+  await page.getByRole('button', { name: 'Submit current guess' }).click();
+  await expect(page.getByText('ROUND 16')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect((await state(page)).phase).toBe('playing');
+});
+
+test('portrait game fits small and taller phones without page scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await seed(page, startGame(initialGame({ types: [...CHORD_TYPES], inversions: true })));
+  await expect(page.locator('.piano-key')).toHaveCount(24);
+  for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: `test-results/phone-${viewport.width}-all-types.png`, fullPage: true });
+    const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewportHeight: window.innerHeight, viewportWidth: window.innerWidth }));
+    expect(size.width).toBeLessThanOrEqual(size.viewportWidth);
+    expect(size.height).toBeLessThanOrEqual(size.viewportHeight);
+    const white = (await page.getByRole('button', { name: 'C3', exact: true }).boundingBox())!;
+    expect(white.height).toBeGreaterThanOrEqual(96);
+  }
 });
