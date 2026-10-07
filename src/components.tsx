@@ -1,6 +1,6 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react';
 import { X, type LucideIcon } from 'lucide-react';
-import { noteLabel } from './game';
+import { labels, translate, type Language } from './i18n';
 
 export function IconButton({ label, icon: Icon, onClick, disabled = false, className = '', active = false }: {
   label: string; icon: LucideIcon; onClick: () => void; disabled?: boolean; className?: string; active?: boolean;
@@ -9,9 +9,9 @@ export function IconButton({ label, icon: Icon, onClick, disabled = false, class
     className={`icon-button ${className} ${active ? 'active' : ''}`}><Icon aria-hidden="true" strokeWidth={1.65} /></button>;
 }
 
-export function Modal({ title, children, onClose, className = '' }: { title: string; children: ReactNode; onClose?: () => void; className?: string }) {
+export function Modal({ title, children, onClose, className = '', language = 'en' }: { language?: Language; title: string; children: ReactNode; onClose?: () => void; className?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const heading = title.toLowerCase().replace(/[^a-z]+/g, '-');
+  const heading = useId();
   useEffect(() => {
     const element = dialog.current!;
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -20,7 +20,7 @@ export function Modal({ title, children, onClose, className = '' }: { title: str
   }, []);
   return <dialog ref={dialog} aria-labelledby={heading} className={`modal ${className}`}
     onCancel={event => { event.preventDefault(); onClose?.(); }}>
-    {onClose && <IconButton className="modal-close quiet" label="Close dialog" icon={X} onClick={onClose} />}
+    {onClose && <IconButton className="modal-close quiet" label={translate(language, 'Close dialog')} icon={X} onClick={onClose} />}
     <h2 id={heading}>{title}</h2>
     {children}
   </dialog>;
@@ -29,15 +29,16 @@ export function Modal({ title, children, onClose, className = '' }: { title: str
 const WHITE = [0, 2, 4, 5, 7, 9, 11];
 const BLACK = [{ offset: 1, position: 1 }, { offset: 3, position: 2 }, { offset: 6, position: 4 }, { offset: 8, position: 5 }, { offset: 10, position: 6 }];
 
-export function Keyboard({ selected, disabled, onToggle }: { selected: number[]; disabled: boolean; onToggle: (note: number) => void }) {
+export function Keyboard({ selected, disabled, onToggle, language = 'en' }: { language?: Language; selected: number[]; disabled: boolean; onToggle: (note: number) => void }) {
+  const text = labels(language);
   function key(note: number, black: boolean, style?: CSSProperties) {
     return <button key={note} type="button" className={`piano-key ${black ? 'black' : 'white'} ${selected.includes(note) ? 'selected' : ''}`}
-      style={style} aria-label={noteLabel(note)} aria-pressed={selected.includes(note)} disabled={disabled} onClick={() => onToggle(note)}>
+      style={style} aria-label={text.note(note)} aria-pressed={selected.includes(note)} disabled={disabled} onClick={() => onToggle(note)}>
       <span className="key-dot" aria-hidden="true" />
     </button>;
   }
-  return <div className={`piano ${disabled ? 'piano-disabled' : ''}`} aria-label="Piano keyboard">
-    {[48, 60].map((base, index) => <div className="octave" role="group" aria-label={`Octave ${index + 3}`} key={base}>
+  return <div className={`piano ${disabled ? 'piano-disabled' : ''}`} aria-label={translate(language, 'Piano keyboard')}>
+    {[48, 60].map((base, index) => <div className="octave" role="group" aria-label={text.octave(index + 3)} key={base}>
       <div className="white-keys">{WHITE.map(offset => key(base + offset, false))}</div>
       {BLACK.map(({ offset, position }) => key(base + offset, true, { left: `${position / 7 * 100}%` }))}
     </div>)}

@@ -11,15 +11,39 @@ export const CHORDS = {
   halfDiminished7: { label: 'Half-diminished 7th', symbol: 'ø7', intervals: [0, 3, 6, 10] },
   diminished7: { label: 'Diminished 7th', symbol: '°7', intervals: [0, 3, 6, 9] },
 } as const;
+export const INTERVALS = {
+  unison: { label: 'Unison', symbol: 'P1', semitones: 0, group: 'Unison' },
+  minor2: { label: 'Minor 2nd', symbol: 'm2', semitones: 1, group: '2nd' },
+  major2: { label: 'Major 2nd', symbol: 'M2', semitones: 2, group: '2nd' },
+  minor3: { label: 'Minor 3rd', symbol: 'm3', semitones: 3, group: '3rd' },
+  major3: { label: 'Major 3rd', symbol: 'M3', semitones: 4, group: '3rd' },
+  perfect4: { label: 'Perfect 4th', symbol: 'P4', semitones: 5, group: '4th' },
+  tritone: { label: 'Tritone', symbol: 'TT', semitones: 6, group: 'Tritone' },
+  perfect5: { label: 'Perfect 5th', symbol: 'P5', semitones: 7, group: '5th' },
+  minor6: { label: 'Minor 6th', symbol: 'm6', semitones: 8, group: '6th' },
+  major6: { label: 'Major 6th', symbol: 'M6', semitones: 9, group: '6th' },
+  minor7Interval: { label: 'Minor 7th', symbol: 'm7', semitones: 10, group: '7th' },
+  major7Interval: { label: 'Major 7th', symbol: 'M7', semitones: 11, group: '7th' },
+  octave: { label: 'Octave', symbol: 'P8', semitones: 12, group: 'Octave' },
+} as const;
+export type IntervalType = keyof typeof INTERVALS;
+export const INTERVAL_TYPES = Object.keys(INTERVALS) as IntervalType[];
+export const REQUIRED_INTERVALS = INTERVAL_TYPES.filter(type => !['unison', 'tritone', 'minor7Interval', 'major7Interval'].includes(type));
+export const INTERVAL_GROUPS = [...new Set(INTERVAL_TYPES.map(type => INTERVALS[type].group))];
+export const DEFINITIONS = { ...CHORDS, ...INTERVALS };
 export type ChordType = keyof typeof CHORDS;
 export const CHORD_TYPES = Object.keys(CHORDS) as ChordType[];
 export const REQUIRED_TYPES: ChordType[] = ['major', 'minor'];
-export type Counts = Record<ChordType, number>;
-export interface Settings { types: ChordType[]; inversions: boolean }
-export interface Target { type: ChordType; notes: number[]; root: number; inversion: number }
+export type GuessType = ChordType | IntervalType;
+export const ALL_TYPES: GuessType[] = [...CHORD_TYPES, ...INTERVAL_TYPES];
+export type Counts = Record<GuessType, number>;
+export interface Settings { mode?: 'chords' | 'intervals'; difficulty?: 'easy' | 'regular'; types: GuessType[]; inversions: boolean }
+export const DEFAULT_CHORD_SETTINGS: Settings = { types: [...REQUIRED_TYPES], inversions: false };
+export const DEFAULT_INTERVAL_SETTINGS: Settings = { mode: 'intervals', difficulty: 'easy', types: [...REQUIRED_INTERVALS], inversions: false };
+export interface Target { type: GuessType; notes: number[]; root: number; inversion: number }
 export type Phase = 'setup' | 'playing' | 'success' | 'milestone' | 'finale' | 'complete';
 export interface Game {
-  version: 2;
+  version: 3;
   settings: Settings;
   phase: Phase;
   target: Target | null;
@@ -33,9 +57,9 @@ export interface Game {
 }
 export const MILESTONE_SCORES = [5, 10] as const;
 
-export function initialGame(settings: Settings = { types: [...REQUIRED_TYPES], inversions: false }, hintsSeen = false): Game {
-  return { version: 2, settings, phase: 'setup', target: null, selected: [],
-    counts: Object.fromEntries(CHORD_TYPES.map(type => [type, 0])) as Counts,
+export function initialGame(settings: Settings = DEFAULT_INTERVAL_SETTINGS, hintsSeen = false): Game {
+  return { version: 3, settings, phase: 'setup', target: null, selected: [],
+    counts: Object.fromEntries(ALL_TYPES.map(type => [type, 0])) as Counts,
     total: 0, round: 0, hintsSeen, feedback: 'none', wrongAttempts: 0 };
 }
 
@@ -45,8 +69,15 @@ export function sameNotes(a: readonly number[], b: readonly number[]): boolean {
   return [...a].sort((x, y) => x - y).every((note, i) => note === sortedB[i]);
 }
 
-export function voicings(type: ChordType, inversions: boolean): Target[] {
-  const intervals = CHORDS[type].intervals;
+export function voicings(type: GuessType, inversions: boolean): Target[] {
+  if (type in INTERVALS) {
+    const distance = INTERVALS[type as IntervalType].semitones;
+    return Array.from({ length: HIGH_NOTE - LOW_NOTE - distance + 1 }, (_, i) => {
+      const root = LOW_NOTE + i;
+      return { type, root, inversion: 0, notes: distance === 0 ? [root] : [root, root + distance] };
+    });
+  }
+  const intervals = CHORDS[type as ChordType].intervals;
   const result: Target[] = [];
   for (let root = LOW_NOTE - 12; root <= HIGH_NOTE; root++) {
     for (let inversion = 0; inversion < (inversions ? intervals.length : 1); inversion++) {
@@ -79,7 +110,7 @@ export function generateTarget(settings: Settings, counts: Counts, previous: Tar
 }
 
 export function isComplete(game: Pick<Game, 'total' | 'settings' | 'counts'>): boolean {
-  return game.total >= 15 && game.settings.types.every(type => game.counts[type] >= 2);
+  return (game.settings.mode === 'intervals' || game.total >= 15) && game.settings.types.every(type => game.counts[type] >= 2);
 }
 
 export function startGame(game: Game, random = Math.random): Game {
@@ -88,14 +119,16 @@ export function startGame(game: Game, random = Math.random): Game {
 }
 
 export function toggleNote(game: Game, note: number): Game {
-  if (game.phase !== 'playing' || !Number.isInteger(note) || note < LOW_NOTE || note > HIGH_NOTE) return game;
+  if ((game.settings.mode === 'intervals' && game.settings.difficulty === 'easy') || game.phase !== 'playing' || !Number.isInteger(note) || note < LOW_NOTE || note > HIGH_NOTE) return game;
   return { ...game, feedback: 'none', selected: game.selected.includes(note)
     ? game.selected.filter(item => item !== note) : [...game.selected, note].sort((a, b) => a - b) };
 }
 
-export function submitGuess(game: Game): Game {
-  if (game.phase !== 'playing' || !game.target || !game.selected.length) return game;
-  if (!sameNotes(game.selected, game.target.notes)) return { ...game, feedback: 'incorrect', wrongAttempts: game.wrongAttempts + 1 };
+export function submitGuess(game: Game, interval?: IntervalType): Game {
+  const easy = game.settings.mode === 'intervals' && game.settings.difficulty === 'easy';
+  if (easy && (!interval || !game.settings.types.includes(interval))) return game;
+  if (game.phase !== 'playing' || !game.target || (!easy && !game.selected.length)) return game;
+  if (easy ? interval !== game.target.type : !sameNotes(game.selected, game.target.notes)) return { ...game, feedback: 'incorrect', wrongAttempts: game.wrongAttempts + 1 };
   const total = game.total + 1;
   const counts = { ...game.counts, [game.target.type]: game.counts[game.target.type] + 1 };
   return { ...game, total, selected: [], feedback: 'none',

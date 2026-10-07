@@ -277,3 +277,63 @@ footer > span:first-child { display: flex; align-items: center; gap: 7px; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .wave.wave-active { opacity: .3; }
 }
+
+.setup-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+.setup-tabs button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface); cursor: pointer; }
+.setup-tabs button[aria-selected="true"] { color: var(--accent-strong); background: var(--accent-light); border-color: var(--accent-border); }
+.difficulty-options { margin: 0 0 24px; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.difficulty-options legend { font-size: 12px; margin-bottom: 12px; }
+.difficulty-options label { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 180px; min-height: 56px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
+.difficulty-options label:has(input:checked) { background: var(--accent-light); border-color: var(--accent-border); }
+.difficulty-options input { accent-color: var(--accent-strong); }
+.difficulty-options strong { font-size: 12px; }
+.difficulty-options small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.interval-setup-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.interval-setup-groups fieldset { min-width: 0; margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px; }
+.interval-setup-groups legend { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.interval-answer-section { width: 100%; max-width: 780px; margin: 0 auto; }
+.interval-answer-section > p { margin: 8px 0 12px; }
+.interval-answers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.interval-answers > div { display: flex; gap: 6px; }
+.interval-answer { flex: 1; min-width: 0; min-height: 58px; padding: 8px 4px; border: 1px solid var(--accent-border); border-radius: 9px; background: var(--accent-light); color: var(--accent-strong); cursor: pointer; }
+.interval-answer:hover:not(:disabled) { background: var(--accent); }
+.interval-answer:disabled { opacity: .45; cursor: default; }
+.interval-answer > span { display: block; font: 20px Georgia, serif; }
+.interval-answer small { font-size: 10px; }
+@media (max-width: 700px) {
+  .interval-setup-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .interval-answers { gap: 7px; }
+  .interval-answer { min-height: 48px; }
+  .interval-answer > span { font-size: 17px; }
+  .interval-answer small { font-size: 9px; }
+  .interval-answer-section { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+}
+@media (max-width: 700px) and (max-height: 750px) and (orientation: portrait) {
+  .interval-game.game-shell .header { flex-basis: 50px; height: 50px; }
+  .interval-game .listening-space { padding-top: 6px; }
+  .interval-game .listening-row { min-height: 72px; }
+  .interval-game .controls { margin: 2px 0 4px; }
+  .interval-game .controls .icon-button { width: 44px; height: 44px; }
+  .interval-game .round-feedback { margin-top: 3px; }
+  .interval-game .type-progress { margin-top: 8px; padding-top: 6px; }
+  .interval-game .type-chips { gap: 4px; margin-top: 7px; }
+  .interval-game .type-chip { padding-top: 3px; padding-bottom: 3px; }
+}
+.language-options { display: grid; gap: 12px; margin: 24px 0 0; border: 0; padding: 0; }
+.language-options label { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
+.language-options label:has(input:checked) { border-color: var(--accent-border); background: var(--accent-light); }
+.language-options input { accent-color: var(--accent-strong); }
+.chord-label { min-width: 0; overflow-wrap: anywhere; }
+.interval-answer small { display: block; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .wordmark { font-size: 18px; }
+  .brand-mark { margin-right: 7px; }
+  .header-actions { flex-shrink: 0; }
+}
+@media (max-width: 360px) {
+  .wordmark, .game-shell .wordmark { font-size: 16px; }
+  .brand-mark { display: none; }
+  .header-actions .icon-button { width: 40px; }
+}
+
+.language-trigger { font-size: 12px; font-weight: 650; letter-spacing: .5px; }
