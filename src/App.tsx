@@ -3,9 +3,10 @@ import { ArrowRight, Check, CircleHelp, Headphones, Leaf, ListMusic, LoaderCircl
 import { CHORDS, CHORD_TYPES, REQUIRED_TYPES, INTERVALS, INTERVAL_TYPES, INTERVAL_GROUPS, REQUIRED_INTERVALS, DEFAULT_CHORD_SETTINGS, DEFAULT_INTERVAL_SETTINGS, initialGame, isComplete, nextRound, startGame, submitGuess, toggleNote, type GuessType, type IntervalType, type Game } from './game';
 import { loadSession, saveSession } from './session';
 import { PianoAudio, type PlaybackKind } from './audio';
-import { Confetti, IconButton, Keyboard, Modal, Wave } from './components';
+import { Confetti, IconButton, InstrumentIcon, Keyboard, Modal, Wave } from './components';
 import { completionCelebration, milestones } from './milestones';
 import { labels, loadLanguage, saveLanguage, translate, type MessageKey } from './i18n';
+import { INSTRUMENTS, INSTRUMENT_TYPES, loadInstrument, saveInstrument, type Instrument } from './instrument';
 import { ACCENTS, applyTheme, loadTheme, saveTheme, type Accent } from './theme';
 
 const helpItems = [
@@ -17,7 +18,12 @@ const helpItems = [
 ] as const;
 
 export default function App() {
-  const [language, setLanguage] = useState(loadLanguage);
+  const [instrument, setInstrument] = useState(loadInstrument);
+  const instrumentRef = useRef(instrument);
+  instrumentRef.current = instrument;
+  const [loadingInstrument, setLoadingInstrument] = useState<Instrument | null>(null);
+  const [instrumentOpen, setInstrumentOpen] = useState(false);
+  const [language, setLanguage] = useState(() => window.location.pathname === '/ru' || window.location.pathname === '/ru/' ? 'ru' as const : loadLanguage());
   const [languageOpen, setLanguageOpen] = useState(false);
   const t = (key: MessageKey) => translate(language, key);
   const text = labels(language);
@@ -47,10 +53,13 @@ export default function App() {
     saveLanguage(language);
   }, [language]);
 
+  useEffect(() => { saveInstrument(instrument); }, [instrument]);
+
   useEffect(() => { applyTheme(theme); saveTheme(theme); }, [theme]);
 
   useEffect(() => {
     const piano = new PianoAudio();
+    piano.setTargetInstrument(instrumentRef.current);
     piano.onPlayback = setPlaying;
     audio.current = piano;
     const onVisibility = () => { if (document.hidden) { cancelPendingPlayback(); piano.stop(); } };
@@ -64,7 +73,7 @@ export default function App() {
     cancelPendingPlayback();
     setAudioError('');
     try { await audio.current?.play(notes, kind); }
-    catch { setAudioError('The piano couldn’t load. Check your connection and tap a play control to try again.'); }
+    catch { setAudioError(kind === 'target' || kind === 'sequence' ? 'The instrument couldn’t load. Check your connection and try again.' : 'The piano couldn’t load. Check your connection and tap a play control to try again.'); }
   }, [cancelPendingPlayback]);
 
   useEffect(() => {
@@ -76,10 +85,10 @@ export default function App() {
   }, [game.phase, game.round, play, cancelPendingPlayback]);
 
   useEffect(() => {
-    if (game.phase !== 'success') return;
+    if (game.phase !== 'success' || instrumentOpen || busy) return;
     const timer = setTimeout(() => setGame(current => nextRound(current)), 1900);
     return () => clearTimeout(timer);
-  }, [game.phase, game.total]);
+  }, [game.phase, game.total, instrumentOpen, busy]);
 
   async function begin() {
     if (actionPending.current) return;
@@ -89,7 +98,7 @@ export default function App() {
     try {
       await audio.current!.prepare();
       setGame(current => startGame(current));
-    } catch { setAudioError('The piano couldn’t load. Check your connection and try starting again.'); }
+    } catch { setAudioError('The instrument couldn’t load. Check your connection and try again.'); }
     finally { actionPending.current = false; setBusy(false); }
   }
 
@@ -112,7 +121,7 @@ export default function App() {
       if (current.phase !== 'playing') return;
       void play(current.selected, 'guess');
       setGame(state => submitGuess(state));
-    } catch { setAudioError('The piano couldn’t load. Your guess is saved. Tap submit to try again.'); }
+    } catch { setAudioError('The sound couldn’t load. Your guess is saved. Tap submit to try again.'); }
     finally { actionPending.current = false; setBusy(false); }
   }
 
@@ -127,7 +136,7 @@ export default function App() {
       // Continue and Skip are also audio-unlocking gestures after a restored session.
       if (!isComplete(gameRef.current)) await audio.current!.prepare();
       setGame(current => nextRound(current));
-    } catch { setAudioError('The piano couldn’t load. Check your connection and try again.'); }
+    } catch { setAudioError('The instrument couldn’t load. Check your connection and try again.'); }
     finally { actionPending.current = false; setBusy(false); }
   }
   function closeHelp() { setHelpOpen(false); setGame(current => ({ ...current, hintsSeen: true })); }
@@ -155,8 +164,24 @@ export default function App() {
     try {
       await audio.current!.prepare();
       setGame(current => submitGuess(current, type));
-    } catch { setAudioError('The piano couldn’t load. Tap your interval to try again.'); }
+    } catch { setAudioError('The instrument couldn’t load. Check your connection and try again.'); }
     finally { actionPending.current = false; setBusy(false); }
+  }
+
+  async function chooseInstrument(choice: Instrument) {
+    if (actionPending.current || choice === instrumentRef.current) return;
+    actionPending.current = true;
+    cancelPendingPlayback();
+    audio.current?.stop();
+    setLoadingInstrument(choice);
+    setBusy(true);
+    setAudioError('');
+    try {
+      await audio.current!.prepare(choice);
+      audio.current!.setTargetInstrument(choice);
+      setInstrument(choice);
+    } catch { setAudioError('The instrument couldn’t load. Choose it again to retry.'); }
+    finally { actionPending.current = false; setLoadingInstrument(null); setBusy(false); }
   }
 
   const intervals = game.settings.mode === 'intervals';
@@ -172,10 +197,11 @@ export default function App() {
 
   return <div className={`app-shell ${setup ? 'setup-shell' : 'game-shell'} ${intervals ? 'interval-game' : ''}`}>
     <header className="header">
-      <a className="wordmark" href="/" aria-label={t('Chordguessr home')}><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>chordguessr<span className="brand-period">.</span></a>
+      <a className="wordmark" href="/" aria-label={t('Chordguessr home')}><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span className="brand-name">chordguessr<span className="brand-period">.</span></span></a>
       <div className="header-actions">
         {!setup && <IconButton label={t('Start a new game')} icon={RotateCcw} disabled={busy} onClick={() => { cancelPendingPlayback(); audio.current?.stop(); setRestartOpen(true); }} className="quiet" />}
         <IconButton label={t('How to play')} icon={CircleHelp} onClick={() => setHelpOpen(true)} className="quiet" />
+        <button type="button" className="icon-button quiet instrument-trigger" aria-label={t('Change instrument')} title={`${t('Change instrument')}: ${t(INSTRUMENTS[instrument].label)}`} disabled={busy} onClick={() => setInstrumentOpen(true)}><InstrumentIcon instrument={instrument} /></button>
         <button type="button" className="icon-button quiet language-trigger" aria-label={t('Change language')} title={t('Change language')} onClick={() => setLanguageOpen(true)}><span aria-hidden="true">{language.toUpperCase()}</span></button>
         <button type="button" className="icon-button quiet theme-trigger" aria-label={t('Change colors')} title={t('Change colors')} onClick={() => setThemeOpen(true)}><span aria-hidden="true" /></button>
       </div>
@@ -220,7 +246,7 @@ export default function App() {
           </>}
           </div>
           <div className="start-row"><div><strong>{t('Ready when you are.')}</strong><span>{t(intervals ? 'Each interval kind at least twice' : '15 correct chords · each type at least twice')}</span></div>
-            <IconButton label={t(busy ? 'Loading piano' : 'Start game')} icon={busy ? LoaderCircle : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} onClick={() => void begin()} disabled={busy} />
+            <IconButton label={t(busy ? 'Loading sound' : 'Start game')} icon={busy ? LoaderCircle : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} onClick={() => void begin()} disabled={busy} />
           </div>
         </div>
         <p className="headphone-note"><Headphones size={15} aria-hidden="true" /> {t('A quiet moment and headphones go a long way.')}</p>
@@ -278,6 +304,15 @@ export default function App() {
 
     <footer><span><Leaf size={13} aria-hidden="true" /> {t('A little practice. A better ear.')}</span><span>{t('Made for the joy of listening.')}</span></footer>
 
+    {instrumentOpen && <Modal language={language} title={t('Secret sound instrument')} onClose={() => setInstrumentOpen(false)} className="instrument-modal">
+      <p className="modal-intro">{t('Choose the sound for secret chords and intervals. Piano keys and your guesses always use piano.')}</p>
+      <fieldset className="instrument-options"><legend className="sr-only">{t('Secret sound instrument')}</legend>
+        {INSTRUMENT_TYPES.map(choice => <label key={choice}><input type="radio" name="instrument" aria-label={t(INSTRUMENTS[choice].label)} checked={(loadingInstrument ?? instrument) === choice} disabled={busy} onChange={() => void chooseInstrument(choice)} /><InstrumentIcon instrument={choice} /><span>{t(INSTRUMENTS[choice].label)}</span></label>)}
+      </fieldset>
+      {busy && <p role="status" className="modal-intro">{t('Loading sound')}</p>}
+      {audioError && <p role="alert" className="error-message">{t(audioError)}</p>}
+    </Modal>}
+
     {languageOpen && <Modal language={language} title={t('Language')} onClose={() => setLanguageOpen(false)} className="language-modal">
       <fieldset className="language-options"><legend className="sr-only">{t('Language')}</legend>
         {(['en', 'ru'] as const).map(choice => <label key={choice}><input type="radio" name="language" checked={language === choice} onChange={() => setLanguage(choice)} /><span>{t(choice === 'en' ? 'English' : 'Russian')}</span></label>)}
@@ -304,7 +339,9 @@ export default function App() {
       <div className="help-items">{helpItems.map(({ icon: Icon, title, text }) => <div key={title}><span className="help-icon"><Icon size={21} aria-hidden="true" /></span><div><strong>{t(title)}</strong><p>{t(text)}</p></div></div>)}</div>
       <p className="help-goal"><Sparkles size={18} aria-hidden="true" /> {t('Find every enabled interval kind twice. For chords, find at least 15 and each enabled type twice. Take your time — there’s no clock.')}</p>
       <div className="modal-action"><span>{t('Let’s make a little music')}</span><IconButton label={t('Got it')} icon={ArrowRight} className="primary" onClick={closeHelp} /></div>
+      <p className="modal-intro">{t('Choose the sound for secret chords and intervals. Piano keys and your guesses always use piano.')}</p>
       <p className="audio-credit">{t('Piano: Alexander Holm’s ')}<a href="/audio/ATTRIBUTION.txt" target="_blank" rel="noreferrer">Salamander Grand Piano</a> · CC BY 3.0</p>
+      <p className="audio-credit">{t('Flute, guitar and voice: Frank Wen’s ')}<a href="/audio/FLUIDR3-ATTRIBUTION.txt" target="_blank" rel="noreferrer">FluidR3</a> · CC BY 3.0</p>
     </Modal>}
 
     {restartOpen && <Modal language={language} title={t('A fresh beginning?')} onClose={() => setRestartOpen(false)}>

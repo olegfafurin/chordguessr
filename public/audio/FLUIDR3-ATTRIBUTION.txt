@@ -1,0 +1,23 @@
+FluidR3 General MIDI SoundFont
+Original soundfont: Frank Wen, copyright 2000-2002, 2008
+MP3 rendering and packaging: Benjamin Gleitzman / MIDI.js Soundfonts
+
+The flute, guitar, and voice MP3 samples were downloaded unchanged from:
+https://github.com/gleitz/midi-js-soundfonts/tree/gh-pages/FluidR3_GM
+
+Included presets:
+- flute-mp3 (public/audio/flute/)
+- acoustic_guitar_nylon-mp3 (public/audio/guitar/)
+- choir_aahs-mp3 (public/audio/voice/)
+
+Each preset includes C3, Eb3, Gb3, A3, C4, Eb4, Gb4, A4, and C5.
+Chordguessr adjusts playback rate for adjacent pitches and applies gain
+and duration envelopes at playback time. The MP3 files are unchanged.
+
+The distribution identifies FluidR3 samples as licensed under Creative
+Commons Attribution 3.0 Unported (CC BY 3.0):
+https://creativecommons.org/licenses/by/3.0/
+See FLUIDR3-README.md for the upstream soundfont licensing information.
+
+The rendering/packaging project's MIT notice is preserved alongside the
+samples in FLUIDR3-PACKAGING-LICENSE.txt. No endorsement is implied.

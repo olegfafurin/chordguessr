@@ -1,37 +1,64 @@
+import type { Instrument } from './instrument';
+
 export type PlaybackKind = 'target' | 'guess' | 'sequence' | 'note';
-const SAMPLES = [
+const PIANO_SAMPLES = [
   { midi: 48, file: 'C3' }, { midi: 51, file: 'Ds3' }, { midi: 54, file: 'Fs3' },
   { midi: 57, file: 'A3' }, { midi: 60, file: 'C4' }, { midi: 63, file: 'Ds4' },
   { midi: 66, file: 'Fs4' }, { midi: 69, file: 'A4' }, { midi: 72, file: 'C5' },
 ];
 
+const OTHER_SAMPLES = PIANO_SAMPLES.map(sample => ({ ...sample, file: sample.file.replace('Ds', 'Eb').replace('Fs', 'Gb') }));
+interface SampleBank { buffers: Map<number, AudioBuffer>; loading: Promise<void> | null }
+
 export class PianoAudio {
   private context: AudioContext | null = null;
-  private buffers = new Map<number, AudioBuffer>();
-  private loading: Promise<void> | null = null;
+  private banks = new Map<Instrument, SampleBank>();
+  private targetInstrument: Instrument = 'piano';
   private voices = new Set<AudioBufferSourceNode>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
   private disposed = false;
   onPlayback: (kind: PlaybackKind | null) => void = () => {};
 
-  get ready(): boolean { return this.context?.state === 'running' && this.buffers.size === SAMPLES.length; }
+  get ready(): boolean {
+    return this.context?.state === 'running' && this.banks.get('piano')?.buffers.size === PIANO_SAMPLES.length
+      && this.banks.get(this.targetInstrument)?.buffers.size === PIANO_SAMPLES.length;
+  }
 
-  async prepare(): Promise<void> {
+  setTargetInstrument(instrument: Instrument): void {
+    if (instrument === this.targetInstrument) return;
+    this.stop();
+    this.targetInstrument = instrument;
+  }
+
+  async prepare(instrument: Instrument = this.targetInstrument): Promise<void> {
     if (this.disposed) return;
     if (!this.context) this.context = new AudioContext();
     // Resume immediately inside the user's gesture, before fetching or decoding.
     await this.context.resume();
-    if (!this.loading) {
-      const context = this.context;
-      this.loading = Promise.all(SAMPLES.map(async ({ midi, file }) => {
-        const response = await fetch(`/audio/${file}.mp3`);
-        if (!response.ok) throw new Error('Piano sample unavailable');
-        const buffer = await context.decodeAudioData(await response.arrayBuffer());
-        this.buffers.set(midi, buffer);
-      })).then(() => {}).catch(error => { this.loading = null; throw error; });
+    if (this.disposed) return;
+    await Promise.all([...new Set<Instrument>(['piano', instrument])].map(choice => this.loadBank(choice)));
+  }
+
+  private loadBank(instrument: Instrument): Promise<void> {
+    let bank = this.banks.get(instrument);
+    if (!bank) {
+      bank = { buffers: new Map(), loading: null };
+      this.banks.set(instrument, bank);
     }
-    await this.loading;
+    if (!bank.loading) {
+      const context = this.context!;
+      const currentBank = bank;
+      const samples = instrument === 'piano' ? PIANO_SAMPLES : OTHER_SAMPLES;
+      const directory = instrument === 'piano' ? '/audio' : `/audio/${instrument}`;
+      bank.loading = Promise.all(samples.filter(sample => !currentBank.buffers.has(sample.midi)).map(async ({ midi, file }) => {
+        const response = await fetch(`${directory}/${file}.mp3`);
+        if (!response.ok) throw new Error('Instrument sample unavailable');
+        const buffer = await context.decodeAudioData(await response.arrayBuffer());
+        if (!this.disposed) currentBank.buffers.set(midi, buffer);
+      })).then(() => {}).catch(error => { currentBank.loading = null; throw error; });
+    }
+    return bank.loading;
   }
 
   stop(): void {
@@ -46,16 +73,19 @@ export class PianoAudio {
     this.stop();
     if (!notes.length || this.disposed) return;
     const generation = this.generation;
-    await this.prepare();
+    const instrument = kind === 'target' || kind === 'sequence' ? this.targetInstrument : 'piano';
+    await this.prepare(instrument);
     if (this.disposed || generation !== this.generation || !this.context) return;
     const context = this.context;
     const now = context.currentTime + 0.02;
     const duration = kind === 'note' ? 0.7 : kind === 'sequence' ? 0.8 : 1.6;
+    const buffers = this.banks.get(instrument)!.buffers;
+    const samples = instrument === 'piano' ? PIANO_SAMPLES : OTHER_SAMPLES;
     const ordered = [...notes].sort((a, b) => a - b);
     ordered.forEach((note, index) => {
-      const sample = SAMPLES.reduce((best, item) => Math.abs(item.midi - note) < Math.abs(best.midi - note) ? item : best);
+      const sample = samples.reduce((best, item) => Math.abs(item.midi - note) < Math.abs(best.midi - note) ? item : best);
       const source = context.createBufferSource();
-      source.buffer = this.buffers.get(sample.midi)!;
+      source.buffer = buffers.get(sample.midi)!;
       source.playbackRate.value = 2 ** ((note - sample.midi) / 12);
       const gain = context.createGain();
       const start = now + (kind === 'sequence' ? index * 0.5 : 0);
@@ -79,6 +109,7 @@ export class PianoAudio {
   dispose(): void {
     this.disposed = true;
     this.stop();
+    this.banks.clear();
     void this.context?.close();
   }
 }

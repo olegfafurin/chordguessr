@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react';
-import { X, type LucideIcon } from 'lucide-react';
+import { Guitar, MicVocal, Piano, X, type LucideIcon } from 'lucide-react';
+import type { Instrument } from './instrument';
 import { labels, translate, type Language } from './i18n';
 
 export function IconButton({ label, icon: Icon, onClick, disabled = false, className = '', active = false }: {
@@ -53,4 +54,14 @@ export function Wave({ active }: { active: boolean }) {
 
 export function Confetti() {
   return <div className="confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, i) => <i key={i} style={{ '--angle': `${i * 22.5}deg`, '--distance': `${80 + i % 4 * 24}px`, '--confetti-color': ['var(--accent-strong)', 'var(--accent)', 'var(--accent-mid)'][i % 3] } as CSSProperties} />)}</div>;
+}
+
+
+export function InstrumentIcon({ instrument }: { instrument: Instrument }) {
+  const Icon = instrument === 'piano' ? Piano : instrument === 'guitar' ? Guitar : instrument === 'voice' ? MicVocal : null;
+  if (Icon) return <Icon aria-hidden="true" strokeWidth={1.65} />;
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 17 17 3l4 4L7 21Z M15 5l4 4 M4 16l4 4 M17 3l2-2 4 4-2 2" />
+    <circle cx="10" cy="16" r=".6" /><circle cx="13" cy="13" r=".6" /><circle cx="16" cy="10" r=".6" />
+  </svg>;
 }

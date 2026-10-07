@@ -20,6 +20,8 @@ Use the color circle in the upper-right corner to choose light pink, lavender, s
 
 Use the language icon beside the color control to switch between **English** (the default) and **Russian**. The whole interface, help, celebrations, errors, and accessible control names update immediately. Language is saved separately under `chordguessr.language.v1` for the tab session and survives refreshes and new games. Switching languages preserves the current round and selected keys.
 
+Use the instrument pictogram in the upper-right corner to choose **piano** (the default), **flute**, **guitar**, or **voice**. Secret chords/intervals and their note-by-note hints use that instrument. Keyboard notes and guess playback always remain piano. The selection is saved separately under `chordguessr.instrument.v1`, survives refreshes and new games, and leaves the round and score intact. All samples are bundled locally; switching instruments cancels pending target playback and loads the chosen sound inside that gesture.
+
 ## Run locally
 
 Use **Node.js 24.x** and npm. An `.nvmrc` is provided.
@@ -59,7 +61,7 @@ Vercel serves the JavaScript, styles, artwork, and piano samples. There is no se
 - The complete game state lives in `sessionStorage` under `chordguessr.session.v3`, including settings, current target, selected keys, counts, wrong attempts in the current round, first-use guide status, and pending celebrations. Version 1 and 2 chord sessions migrate automatically without losing progress. Theme preferences use `chordguessr.theme.v1`. Refreshing preserves the session. It is intended to last for the current tab; browser tab/session recovery can retain it longer. Separate tabs can diverge independently.
 - Invalid or incompatible saved data returns to setup. If storage is unavailable, play continues in memory with a notice that refreshing will lose progress.
 - Restoring a page does not autoplay. Tap a playback control or select a new note to resume audio. Audio-load failures preserve the game and provide a retry message.
-- Piano playback uses nine locally bundled Salamander Grand Piano samples with small pitch shifts for neighboring notes, gain envelopes, and Web Audio scheduling. Target and guess playback trigger a sound wave centered behind the main listen button, with smooth fades. New playback replaces previous playback; hiding the page stops sound.
+- Piano playback uses nine locally bundled Salamander Grand Piano samples with small pitch shifts for neighboring notes, gain envelopes, and Web Audio scheduling. Flute, nylon guitar, and choir voice each use nine bundled FluidR3 MP3 samples, loaded only when needed and cached in the same lazy Web Audio context. Target and guess playback trigger a sound wave centered behind the main listen button, with smooth fades. New playback replaces previous playback; hiding the page stops sound.
 - Portrait mobile layouts stack the two octaves. Desktop and sufficiently wide landscape layouts show a continuous two-octave keyboard. All keys and controls are keyboard-focusable. Keys expose note names and pressed state to assistive technology while remaining visually unlabeled.
 - Dialogs trap focus and restore it when closed. Animations honor `prefers-reduced-motion`.
 
@@ -91,7 +93,7 @@ npm run test:e2e
 
 On Linux, Playwright may also require OS libraries; its documented installer is `npx playwright install --with-deps chromium webkit`. End-to-end tests launch a local Vite server on port 4173. Do not run an unrelated service on that port.
 
-Unit tests cover interval generation, both guessing modes, unisons, interval coverage and migration, chord formulas and range, inversions, weighted generation, exact matching, skips, duplicate-score prevention, milestones, completion, and session validation. Browser tests cover desktop Chromium, mobile Chromium, and mobile WebKit, including selection, audio scheduling using real decoded samples, refresh recovery, restarting, milestone ordering, layouts, and reduced motion. Generated screenshots and failure traces are ignored by Git.
+Unit tests cover instrument routing and preferences, audio caching, failure recovery and cancellation, interval generation, both guessing modes, unisons, interval coverage and migration, chord formulas and range, inversions, weighted generation, exact matching, skips, duplicate-score prevention, milestones, completion, and session validation. Browser tests cover desktop Chromium, mobile Chromium, and mobile WebKit, including instrument selection and real sample routing, selection, audio scheduling using real decoded samples, refresh recovery, restarting, milestone ordering, layouts, and reduced motion. Generated screenshots and failure traces are ignored by Git.
 
 Browser automation cannot establish subjective piano timbre or physical-device audio behavior. Listen once on your intended phone/headphones before sharing broadly, especially for device mute switches, interruptions, and volume settings.
 
@@ -104,3 +106,6 @@ The application code, documentation, and original artwork are licensed under the
 The bundled piano samples in `public/audio/` are licensed separately under **CC BY 3.0**, not MIT. Preserve their attribution and license notices when redistributing them.
 
 Salamander Grand Piano by **Alexander Holm**, licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). MP3 samples are bundled unchanged from the [Tone.js audio repository](https://github.com/Tonejs/audio/tree/master/salamander). Playback applies pitch and volume adjustments. Attribution is included in the in-app help and in `public/audio/ATTRIBUTION.txt`, alongside the upstream README. No endorsement is implied.
+
+
+Flute, nylon guitar, and voice use **FluidR3** samples by **Frank Wen**, rendered and packaged by **Benjamin Gleitzman** in [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts/tree/gh-pages/FluidR3_GM). That distribution identifies the samples as **CC BY 3.0**. The 27 MP3 files are bundled unchanged, with playback rate and envelope changes applied at runtime. Credits and source links are in `public/audio/FLUIDR3-ATTRIBUTION.txt`; the upstream README and packaging license are preserved alongside it. These credits also appear in help.

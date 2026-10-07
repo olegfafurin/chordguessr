@@ -20,6 +20,30 @@ async function russian(page: Page) {
   await page.getByRole('button', { name: 'Закрыть окно', exact: true }).click();
 }
 
+test('/ru selects Russian immediately and follows the normal setup workflow', async ({ page }) => {
+  await page.goto('/ru');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+  await expect(page.getByRole('dialog', { name: 'Краткое руководство.', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Понятно', exact: true }).click();
+  await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Ответ: Малая секунда', exact: true })).toBeVisible();
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+  await expect(page.getByRole('button', { name: 'Ответ: Малая секунда', exact: true })).toBeVisible();
+});
+
+test('/ru overrides a saved English preference without changing the active round', async ({ page }) => {
+  const game = { ...startGame(initialGame(DEFAULT_CHORD_SETTINGS)), selected: [48], wrongAttempts: 1, feedback: 'incorrect' as const };
+  await seed(page, game);
+  await page.goto('/ru/');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+  expect(await page.evaluate(key => sessionStorage.getItem(key), LANGUAGE_KEY)).toBe('ru');
+  expect(await state(page)).toEqual(game);
+  await expect(page.getByRole('button', { name: 'До3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  expect(await state(page)).toEqual(game);
+});
+
 test('English defaults and Russian covers setup, themes, help and the language dialog', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
