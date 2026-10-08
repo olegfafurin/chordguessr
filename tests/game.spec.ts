@@ -43,7 +43,7 @@ test('selection, wrong guesses, exact scoring, and refresh restoration', async (
   await page.getByRole('button', { name: 'C3', exact: true }).click();
   await expect(page.getByRole('button', { name: 'C3', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Submit current guess' }).click();
-  await expect(page.getByText('Not quite yet. Listen again — you’ve got this.')).toBeVisible();
+  await expect(page.getByText('Not quite yet. Listen again — you’ve got this!')).toBeVisible();
   expect((await state(page)).total).toBe(0);
   await page.reload();
   await expect(page.getByRole('dialog')).toHaveCount(0);

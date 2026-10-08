@@ -23,8 +23,8 @@ async function russian(page: Page) {
 test('/ru selects Russian immediately and follows the normal setup workflow', async ({ page }) => {
   await page.goto('/ru');
   await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
-  await expect(page.getByRole('dialog', { name: 'Краткое руководство.', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Понятно', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Краткое руководство', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Всё понятно', exact: true }).click();
   await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Ответ: Малая секунда', exact: true })).toBeVisible();
   await page.goto('/');
@@ -52,11 +52,11 @@ test('English defaults and Russian covers setup, themes, help and the language d
   await russian(page);
   await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
   await expect(page.getByRole('button', { name: 'Изменить язык', exact: true })).toHaveText('RU');
-  await expect(page).toHaveTitle('Chordguessr — найдите свою гармонию');
-  await expect(page.getByRole('heading', { name: 'Найдите свою гармонию.' })).toBeVisible();
+  await expect(page).toHaveTitle('Chordguessr — тренируем слух');
+  await expect(page.getByRole('heading', { name: 'Учимся слышать гармонию.' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Интервалы', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('radio', { name: /^Лёгкий/ })).toBeChecked();
-  await expect(page.getByRole('checkbox', { name: 'Малая секунда', exact: true })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: 'Малая секунда', exact: true })).toBeEnabled();
   await expect(page.getByRole('checkbox', { name: 'Большая септима', exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Аккорды', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /Доминантсептаккорд/ })).toBeVisible();
@@ -69,16 +69,45 @@ test('English defaults and Russian covers setup, themes, help and the language d
   await page.getByRole('radio', { name: 'Тёплый', exact: true }).check();
   await page.getByRole('button', { name: 'Закрыть окно', exact: true }).click();
   await page.getByRole('button', { name: 'Как играть', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Краткое руководство.', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Краткое руководство', exact: true })).toBeVisible();
   await expect(page.getByText('По одной ноте', { exact: true })).toBeVisible();
   await expect(page.getByText(/Фортепиано: библиотека Александра Хольма/)).toBeVisible();
-  await page.getByRole('button', { name: 'Понятно', exact: true }).click();
+  await page.getByRole('button', { name: 'Всё понятно', exact: true }).click();
   await page.getByRole('button', { name: 'Изменить язык', exact: true }).click();
   await page.getByRole('radio', { name: 'Английский', exact: true }).check();
   await expect(page.getByRole('dialog', { name: 'Language', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('tab', { name: 'Chords', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('updated Russian setup copy fits phones and desktop with a single-line title', async ({ page }) => {
+  await seed(page, initialGame(undefined, true), 'ru');
+  for (const viewport of [{ width: 320, height: 667 }, { width: 375, height: 667 }, { width: 390, height: 844 }, { width: 701, height: 900 }, { width: 1280, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    for (const tab of ['Интервалы', 'Аккорды']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      const title = page.getByRole('heading', { name: 'Учимся слышать гармонию.', exact: true });
+      const lines = await title.evaluate(element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rects = [...range.getClientRects()].filter(rect => rect.width > 0);
+        return new Set(rects.map(rect => Math.round(rect.top))).size;
+      });
+      expect(lines).toBe(1);
+      const sizes = await page.locator('#setup-title, .settings-panel, .chord-label, .section-heading, .start-row').evaluateAll(elements => elements.map(element => ({
+        width: element.clientWidth, contentWidth: element.scrollWidth,
+      })));
+      for (const size of sizes) expect(size.contentWidth).toBeLessThanOrEqual(size.width + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      await expect(page.getByRole('button', { name: 'Начать игру', exact: true })).toBeEnabled();
+    }
+  }
+  // Larger text can wrap naturally; it must stay readable and inside the page.
+  await page.setViewportSize({ width: 320, height: 667 });
+  await page.addStyleTag({ content: 'html { font-size: 32px; }' });
+  await expect(page.getByRole('heading', { name: 'Учимся слышать гармонию.', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });
 
 test('changing language preserves the round and selection, translates errors, and persists after refresh and restart', async ({ page }) => {
@@ -98,7 +127,7 @@ test('changing language preserves the round and selection, translates errors, an
   await expect(page.getByRole('button', { name: 'До3', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('1 нота выбрана', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Сыграть аккорд по нотам' })).toBeEnabled();
-  await expect(page.getByText('Пока не совсем. Послушайте ещё — у вас получится.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Не совсем. Послушайте ещё — у вас получится!', { exact: true })).toBeVisible();
   await page.route('**/audio/C3.mp3', route => route.abort());
   await page.getByRole('button', { name: 'Проверить выбранные ноты', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Ваш ответ сохранён');

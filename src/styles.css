@@ -58,14 +58,17 @@ a { color: inherit; }
 h1, h2, p { margin: 0; }
 h1 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -2px; }
 h1 em { font-weight: 400; color: var(--accent-strong); }
-.setup { max-width: 690px; margin: 48px auto 0; text-align: center; }
+.setup { max-width: 690px; margin: 48px auto 0; text-align: center; container-type: inline-size; }
 .setup h1 { font-size: clamp(38px, 5vw, 58px); margin: 17px 0 15px; }
+:lang(ru) .setup h1 { font-size: clamp(1.25rem, 7.4cqi, 3.25rem); letter-spacing: -.04em; }
 .intro { color: var(--muted); font-size: 14px; line-height: 1.8; }
 .intro span { display: block; }
 .settings-panel { margin-top: 35px; padding: 25px; text-align: left; border: 1px solid var(--line); border-radius: 19px; background: var(--surface); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .section-heading h2 { font-size: 12px; font-weight: 600; }
 .section-heading > span { font-size: 11px; color: var(--muted); }
+.settings-panel .section-heading { flex-wrap: wrap; align-items: baseline; }
+.settings-panel .section-heading > span { min-width: 0; }
 .chord-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 20px; }
 .chord-option { position: relative; display: flex; align-items: center; min-height: 69px; padding: 10px; gap: 9px; cursor: pointer; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color .2s, background .2s; }
 .chord-option.chosen { background: var(--accent-light); border-color: var(--accent-border); }
@@ -86,6 +89,7 @@ h1 em { font-weight: 400; color: var(--accent-strong); }
 .inversions-option input:checked::before { transform: translateX(16px); }
 .start-row { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; gap: 10px; }
 .start-row strong { font-family: Georgia, serif; font-size: 19px; font-weight: 400; }
+.start-row > div { min-width: 0; }
 .start-row span { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
 .headphone-note { display: flex; justify-content: center; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); margin: 22px 0 37px; }
 .game-top { width: 100%; max-width: 780px; margin: 24px auto 0; }

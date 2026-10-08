@@ -211,7 +211,7 @@ export default function App() {
       {setup ? <section className="setup" aria-labelledby="setup-title">
         <div className="eyebrow"><span /> {t('A LITTLE DAILY EAR TRAINING')}</div>
         <h1 id="setup-title">{t('Find your ')}<em>{t('harmony.')}</em></h1>
-        <p className="intro">{t('Listen closely. Find the notes.')} <span>{t('Let your ears lead the way.')}</span></p>
+        <p className="intro">{t('Listen closely. Find the notes.')}</p>
         <div className="settings-panel">
           <div className="setup-tabs" role="tablist" aria-label={t('Game kind')}>
             {(['intervals', 'chords'] as const).map(mode => <button key={mode} id={`${mode}-tab`} type="button" role="tab" aria-selected={(intervals ? 'intervals' : 'chords') === mode} aria-controls="setup-options" tabIndex={(intervals ? 'intervals' : 'chords') === mode ? 0 : -1} disabled={busy}
@@ -240,7 +240,7 @@ export default function App() {
             </label>)}
           </div>
           <label className="inversions-option">
-            <span><strong>{t('A different perspective')}</strong><small>{t('Include inversions for an extra challenge')}</small></span>
+            <span><strong>{t('Extra difficulty')}</strong><small>{t('Include inversions for a challenge')}</small></span>
             <input type="checkbox" aria-label={t('Include inversions')} checked={game.settings.inversions} disabled={busy} onChange={event => setGame(current => ({ ...current, settings: { ...current.settings, inversions: event.target.checked } }))} />
           </label>
           </>}
@@ -269,7 +269,7 @@ export default function App() {
             </div>
             <span className="listen-caption">{t(complete ? 'Another little adventure?' : success ? 'Nicely done' : 'Tap to listen')}</span>
             <p aria-live="polite" className={`round-feedback ${game.feedback === 'incorrect' ? 'incorrect' : ''}`}>
-              {success ? t('Beautifully found. Trust those ears.') : game.feedback === 'incorrect' ? t('Not quite yet. Listen again — you’ve got this.') : ''}
+              {success ? t('Beautifully found. Trust those ears.') : game.feedback === 'incorrect' ? t('Not quite yet. Listen again — you’ve got this!') : ''}
             </p>
           </div>
           {!complete && !easy && <div className="controls" role="group" aria-label={t(intervals ? 'Interval controls' : 'Chord controls')}>

@@ -8,7 +8,7 @@ export const milestones: Record<number, Celebration> = {
 
 export const completionCelebration: Celebration = {
   title: 'A musical triumph!',
-  message: 'Beautiful and musically gifted!',
+  message: 'Most impressive!',
   image: '/milestones/15.svg',
   alt: 'A golden star above a celebratory piano',
 };
