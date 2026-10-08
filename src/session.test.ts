@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INTERVAL_TYPES, REQUIRED_INTERVALS, voicings, DEFAULT_CHORD_SETTINGS, initialGame, nextRound, startGame, submitGuess, toggleNote } from './game';
+import { INTERVAL_TYPES, DEFAULT_INTERVAL_TYPES, voicings, DEFAULT_CHORD_SETTINGS, continuePlaying, initialGame, nextRound, startGame, submitGuess, toggleNote, type IntervalType } from './game';
 import { loadSession, parseSession, saveSession, SESSION_KEY } from './session';
 
 describe('session persistence', () => {
@@ -30,13 +30,13 @@ describe('session persistence', () => {
   it('migrates existing sessions, including the old 15-point celebration', () => {
     const base = startGame(initialGame(DEFAULT_CHORD_SETTINGS));
     const old = { ...base, version: 1, total: 15, round: 15, phase: 'milestone', counts: { ...base.counts, major: 14, minor: 1 } };
-    expect(parseSession(JSON.stringify(old))).toMatchObject({ version: 3, total: 15, phase: 'success', wrongAttempts: 0 });
+    expect(parseSession(JSON.stringify(old))).toMatchObject({ version: 4, total: 15, phase: 'success', wrongAttempts: 0 });
     old.counts = { ...base.counts, major: 13, minor: 2 };
-    expect(parseSession(JSON.stringify(old))).toMatchObject({ version: 3, total: 15, phase: 'finale' });
+    expect(parseSession(JSON.stringify(old))).toMatchObject({ version: 4, total: 15, phase: 'finale' });
     const legacyWrong = { ...base, version: 1, feedback: 'incorrect', selected: [48] };
     expect(parseSession(JSON.stringify(legacyWrong))?.wrongAttempts).toBe(1);
     const storage = { getItem: (key: string) => key === 'chordguessr.session.v1' ? JSON.stringify(legacyWrong) : null, setItem: () => {} };
-    expect(loadSession(storage)).toMatchObject({ version: 3, wrongAttempts: 1 });
+    expect(loadSession(storage)).toMatchObject({ version: 4, wrongAttempts: 1 });
   });
   it.each([null, '', '{', 'null', '[]', '{"version":2}', '{"version":1}'])('ignores corrupt or incompatible data: %s', raw => {
     expect(parseSession(raw)).toBeNull();
@@ -59,10 +59,70 @@ describe('session persistence', () => {
     expect(loadSession(storage)).toEqual(initialGame());
     expect(saveSession(initialGame(DEFAULT_CHORD_SETTINGS), storage)).toBe(false);
   });
+  it('restores continued play, including success at the old milestone scores', () => {
+    const base = startGame(initialGame({ mode: 'intervals', difficulty: 'regular', types: ['unison'], inversions: false }));
+    const finale = { ...base, phase: 'finale' as const, total: 2, round: 2, counts: { ...base.counts, unison: 2 } };
+    let game = continuePlaying(finale);
+    expect(parseSession(JSON.stringify(game))).toEqual(game);
+    while (game.total < 16) {
+      const success = submitGuess({ ...game, selected: game.target!.notes });
+      const restored = parseSession(JSON.stringify(success))!;
+      expect(restored).toEqual(success);
+      expect(submitGuess(restored).total).toBe(success.total);
+      game = nextRound(restored);
+      expect(parseSession(JSON.stringify(game))).toEqual(game);
+    }
+    for (const patch of [{ endless: 'true' }, { phase: 'finale' }, { phase: 'complete' }, { phase: 'milestone' }]) {
+      expect(parseSession(JSON.stringify({ ...game, ...patch }))).toBeNull();
+    }
+    expect(parseSession(JSON.stringify({ ...base, endless: true }))).toBeNull();
+    expect(parseSession(JSON.stringify({ ...initialGame(), endless: true }))).toBeNull();
+    const { endless: _endless, ...missingFlag } = game;
+    expect(parseSession(JSON.stringify(missingFlag))).toBeNull();
+  });
+  it('migrates v3 games and final celebrations without losing settings or progress', () => {
+    for (const settings of [DEFAULT_CHORD_SETTINGS, initialGame().settings]) {
+      const base = startGame(initialGame(settings));
+      const success = submitGuess({ ...base, selected: settings.mode === 'intervals' ? [] : base.target!.notes }, settings.mode === 'intervals' ? base.target!.type as IntervalType : undefined);
+      const counts = { ...base.counts };
+      settings.types.forEach(type => { counts[type] = 2; });
+      if (settings.mode !== 'intervals') counts.major = 13;
+      const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      const finale = { ...base, phase: 'finale' as const, total, round: total, counts };
+      for (const game of [base, success, finale]) {
+        const { endless: _endless, ...old } = game;
+        const raw = JSON.stringify({ ...old, version: 3 });
+        expect(parseSession(raw)).toEqual(game);
+        const storage = { getItem: (key: string) => key === 'chordguessr.session.v3' ? raw : null, setItem: () => {} };
+        expect(loadSession(storage)).toEqual(game);
+      }
+    }
+  });
 });
 
 
 describe('interval session validation and migration', () => {
+  it.each(['easy', 'regular'] as const)('preserves incomplete %s setup palettes on refresh', difficulty => {
+    for (const types of [[], ['unison']] as const) {
+      const game = initialGame({ mode: 'intervals', difficulty, types: [...types], inversions: false });
+      expect(parseSession(JSON.stringify(game))).toEqual(game);
+    }
+  });
+  it('restores minimal easy and regular palettes through scoring and completion', () => {
+    for (const difficulty of ['easy', 'regular'] as const) {
+      const types = difficulty === 'easy' ? ['unison', 'tritone'] as const : ['unison'] as const;
+      let game = startGame(initialGame({ mode: 'intervals', difficulty, types: [...types], inversions: false }));
+      expect(parseSession(JSON.stringify(game))).toEqual(game);
+      for (const type of [...types, ...types]) {
+        const target = voicings(type, false)[0];
+        game = submitGuess({ ...game, target, selected: difficulty === 'easy' ? [] : target.notes }, difficulty === 'easy' ? type : undefined);
+        expect(parseSession(JSON.stringify(game))).toEqual(game);
+        game = nextRound(game);
+      }
+      expect(game.phase).toBe('complete');
+      expect(parseSession(JSON.stringify(game))).toEqual(game);
+    }
+  });
   it.each(['easy', 'regular'] as const)('restores %s interval rounds and hint unlocks', difficulty => {
     const base = startGame(initialGame({ mode: 'intervals', difficulty, types: [...INTERVAL_TYPES], inversions: false }));
     const game = { ...base, target: voicings('unison', false)[0], wrongAttempts: 1, selected: difficulty === 'regular' ? [48] : [] };
@@ -75,7 +135,7 @@ describe('interval session validation and migration', () => {
     const milestone = submitGuess({ ...game, target: voicings('minor2', false)[0], round: 5, total: 4, counts: { ...game.counts, minor2: 4 } }, 'minor2');
     expect(parseSession(JSON.stringify(milestone))).toEqual(milestone);
     const counts = { ...game.counts };
-    REQUIRED_INTERVALS.forEach(type => { counts[type] = 2; });
+    DEFAULT_INTERVAL_TYPES.forEach(type => { counts[type] = 2; });
     counts.minor2 = 1;
     const finale = submitGuess({ ...game, target: voicings('minor2', false)[0], round: 18, total: 17, counts }, 'minor2');
     expect(parseSession(JSON.stringify(finale))).toEqual(finale);
@@ -87,18 +147,21 @@ describe('interval session validation and migration', () => {
     const old = { ...submitGuess({ ...base, selected: base.target!.notes }), version: 2 };
     const counts = Object.fromEntries(Object.entries(old.counts).filter(([type]) => !INTERVAL_TYPES.includes(type as typeof INTERVAL_TYPES[number])));
     const migrated = parseSession(JSON.stringify({ ...old, counts }))!;
-    expect(migrated).toMatchObject({ version: 3, phase: 'success', total: 1, target: base.target });
+    expect(migrated).toMatchObject({ version: 4, phase: 'success', total: 1, target: base.target });
     expect(migrated.counts.minor2).toBe(0);
     const storage = { getItem: (key: string) => key === 'chordguessr.session.v2' ? JSON.stringify({ ...old, counts }) : null, setItem: () => {} };
     expect(loadSession(storage)).toEqual(migrated);
     const { major: _major, ...missingCount } = counts;
     expect(parseSession(JSON.stringify({ ...old, counts: missingCount }))).toBeNull();
   });
-  it('rejects mixed palettes, absent required kinds, invalid difficulty and easy piano selections', () => {
+  it('rejects mixed or undersized active palettes, invalid difficulty and easy piano selections', () => {
     const game = startGame(initialGame());
     for (const patch of [
       { settings: { ...game.settings, types: [...game.settings.types, 'major'] } },
       { settings: { ...game.settings, types: ['minor2'] } },
+      { settings: { ...game.settings, types: [] } },
+      { settings: { ...game.settings, difficulty: 'regular', types: [] } },
+      { settings: { ...game.settings, types: ['minor2', 'minor2'] } },
       { settings: { ...game.settings, difficulty: 'unknown' } },
       { settings: { ...game.settings, inversions: true } },
       { selected: [48] }, { counts: { ...game.counts, major: 1 }, total: 1 },

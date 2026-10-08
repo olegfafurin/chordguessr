@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHORDS, CHORD_TYPES, INTERVALS, INTERVAL_TYPES, REQUIRED_INTERVALS, HIGH_NOTE, LOW_NOTE, generateTarget, DEFAULT_CHORD_SETTINGS, initialGame, isComplete, nextRound, sameNotes, startGame, submitGuess, toggleNote, typeWeight, voicings, type Game } from './game';
+import { CHORDS, CHORD_TYPES, INTERVALS, INTERVAL_TYPES, DEFAULT_INTERVAL_TYPES, HIGH_NOTE, LOW_NOTE, generateTarget, DEFAULT_CHORD_SETTINGS, continuePlaying, initialGame, isComplete, nextRound, sameNotes, startGame, submitGuess, toggleNote, typeWeight, voicings, type Game } from './game';
 
 function seededRandom(seed = 1234) {
   return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -137,9 +137,78 @@ describe('rounds and scoring', () => {
 });
 
 
+describe('continuing after the finale', () => {
+  it.each(['chords', 'easy', 'regular'] as const)('keeps %s settings and scores indefinitely without another celebration', mode => {
+    const settings = mode === 'chords' ? DEFAULT_CHORD_SETTINGS : { mode: 'intervals' as const, difficulty: mode, types: ['unison', 'tritone'] as const, inversions: false };
+    const base = startGame(initialGame({ ...settings, types: [...settings.types] }));
+    const finale: Game = { ...base, phase: 'finale', total: mode === 'chords' ? 15 : 4, round: mode === 'chords' ? 15 : 4,
+      wrongAttempts: 1, counts: { ...base.counts, ...(mode === 'chords' ? { major: 13, minor: 2 } : { unison: 2, tritone: 2 }) } };
+    const random = seededRandom();
+    let game = continuePlaying(finale, random);
+    expect(game).toMatchObject({ phase: 'playing', endless: true, total: finale.total, round: finale.round + 1, wrongAttempts: 0 });
+    expect(game.settings).toEqual(finale.settings);
+    expect(game.counts).toEqual(finale.counts);
+    expect(sameNotes(game.target!.notes, finale.target!.notes)).toBe(false);
+    for (let round = 0; round < 30; round++) {
+      const scored = submitGuess({ ...game, selected: mode === 'easy' ? [] : game.target!.notes }, mode === 'easy' ? game.target!.type as keyof typeof INTERVALS : undefined);
+      expect(scored.phase).toBe('success');
+      expect(scored.total).toBe(game.total + 1);
+      expect(submitGuess(scored, 'unison')).toBe(scored);
+      game = nextRound(scored, random);
+      expect(game.phase).toBe('playing');
+    }
+    const skipped = nextRound(game, random);
+    expect(skipped.total).toBe(game.total);
+    expect(skipped.counts).toEqual(game.counts);
+    const reset = initialGame(game.settings, game.hintsSeen);
+    expect(reset).toMatchObject({ phase: 'setup', total: 0, endless: false });
+    expect(reset.settings).toEqual(game.settings);
+  });
+  it('only offers continued play after reaching the final celebration', () => {
+    const setup = initialGame();
+    const playing = startGame(setup);
+    for (const game of [setup, playing, { ...playing, phase: 'finale' as const }]) expect(continuePlaying(game)).toBe(game);
+  });
+});
+
 describe('interval games', () => {
-  it('defaults to easy intervals with every required kind', () => {
-    expect(initialGame().settings).toMatchObject({ mode: 'intervals', difficulty: 'easy', types: REQUIRED_INTERVALS });
+  it('defaults to easy intervals with the default palette', () => {
+    expect(initialGame().settings).toMatchObject({ mode: 'intervals', difficulty: 'easy', types: DEFAULT_INTERVAL_TYPES });
+    expect(initialGame().settings.types).toEqual(['minor2', 'major2', 'minor3', 'major3', 'perfect4', 'perfect5', 'minor6', 'major6', 'octave']);
+  });
+  it.each(['easy', 'regular'] as const)('blocks undersized %s palettes from starting', difficulty => {
+    for (const types of difficulty === 'easy' ? [[], ['unison'], ['unison', 'unison']] as const : [[]] as const) {
+      const game = initialGame({ mode: 'intervals', difficulty, types: [...types], inversions: false });
+      expect(startGame(game)).toBe(game);
+    }
+  });
+  it('allows any two easy types and requires both to be guessed twice', () => {
+    let game = startGame(initialGame({ mode: 'intervals', difficulty: 'easy', types: ['unison', 'tritone'], inversions: false }), () => 0);
+    for (const [index, type] of (['unison', 'unison', 'tritone', 'tritone'] as const).entries()) {
+      game = submitGuess({ ...game, target: voicings(type, false)[0] }, type);
+      expect(game.phase).toBe(index === 3 ? 'finale' : 'success');
+      game = nextRound(game, () => .9);
+      if (index < 3) expect(['unison', 'tritone']).toContain(game.target!.type);
+    }
+    expect(game).toMatchObject({ total: 4, phase: 'complete', counts: { unison: 2, tritone: 2 } });
+  });
+  it.each(INTERVAL_TYPES)('allows regular practice of only %s while still requiring exact pitches', type => {
+    let game = startGame(initialGame({ mode: 'intervals', difficulty: 'regular', types: [type], inversions: false }), seededRandom());
+    const random = seededRandom(4321);
+    for (let round = 0; round < 30; round++) {
+      const previous = game.target!;
+      game = nextRound(game, random);
+      expect(game.target!.type).toBe(type);
+      expect(sameNotes(game.target!.notes, previous.notes)).toBe(false);
+    }
+    const alternate = voicings(type, false).find(target => !sameNotes(target.notes, game.target!.notes))!;
+    expect(submitGuess({ ...game, selected: alternate.notes })).toMatchObject({ total: 0, feedback: 'incorrect' });
+    game = submitGuess({ ...game, selected: game.target!.notes });
+    expect(game).toMatchObject({ total: 1, phase: 'success' });
+    game = nextRound(game, random);
+    game = submitGuess({ ...game, selected: game.target!.notes });
+    expect(game).toMatchObject({ total: 2, phase: 'finale' });
+    expect(nextRound(game).phase).toBe('complete');
   });
   it.each(INTERVAL_TYPES)('generates %s within the piano range with distinct voices', type => {
     for (const target of voicings(type, false)) {
@@ -152,7 +221,7 @@ describe('interval games', () => {
     const game = startGame(initialGame());
     expect(toggleNote(game, 48)).toBe(game);
     expect(submitGuess({ ...game, selected: game.target!.notes })).toEqual({ ...game, selected: game.target!.notes });
-    const wrongType = REQUIRED_INTERVALS.find(type => type !== game.target!.type)!;
+    const wrongType = DEFAULT_INTERVAL_TYPES.find(type => type !== game.target!.type)!;
     const wrong = submitGuess(game, wrongType);
     expect(wrong).toMatchObject({ total: 0, wrongAttempts: 1, feedback: 'incorrect' });
     const scored = submitGuess(wrong, game.target!.type as keyof typeof INTERVALS);
@@ -163,7 +232,7 @@ describe('interval games', () => {
     expect(submitGuess(game, 'unison')).toBe(game);
   });
   it('regular answers require exact pitches, including a single key for unison', () => {
-    const game = startGame(initialGame({ mode: 'intervals', difficulty: 'regular', types: [...REQUIRED_INTERVALS, 'unison'], inversions: false }));
+    const game = startGame(initialGame({ mode: 'intervals', difficulty: 'regular', types: [...DEFAULT_INTERVAL_TYPES, 'unison'], inversions: false }));
     const unison = { ...game, target: voicings('unison', false)[0] };
     expect(submitGuess({ ...unison, selected: [48] }).total).toBe(1);
     expect(submitGuess({ ...unison, selected: [48, 60] }).feedback).toBe('incorrect');

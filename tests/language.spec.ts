@@ -146,7 +146,7 @@ test('Russian interval buttons submit immediately and both layouts fit small pho
 });
 
 for (const total of [5, 10, 15]) {
-  test(`Russian celebration at ${total} survives refresh and translates completion`, async ({ page }) => {
+  test(`Russian celebration at ${total} survives refresh and translates continuation`, async ({ page }) => {
     const base = startGame(initialGame(DEFAULT_CHORD_SETTINGS));
     base.target = { type: 'major', root: 48, inversion: 0, notes: [48, 52, 55] };
     const game = submitGuess({ ...base, total: total - 1, round: total, selected: base.target.notes, counts: { ...base.counts, major: total - 3, minor: 2 } });
@@ -156,9 +156,14 @@ for (const total of [5, 10, 15]) {
     await expect(page.locator('.milestone-art img')).toHaveAttribute('alt', total === 5 ? 'Росток на клавише фортепиано' : total === 10 ? 'Цветок в окружении музыкальных нот' : 'Золотая звезда над праздничным фортепиано');
     await page.reload();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
-    if (total === 15) await expect(page.getByText('ИГРА ЗАВЕРШЕНА', { exact: true })).toBeVisible();
-    else await expect(page.getByText(`РАУНД ${String(total + 1).padStart(2, '0')}`, { exact: true })).toBeVisible();
+    if (total === 15) {
+      await expect(page.getByRole('dialog').getByRole('button', { name: 'Начать новую игру', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Продолжить игру', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Продолжить игру', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    }
+    await expect(page.getByText(`РАУНД ${String(total + 1).padStart(2, '0')}`, { exact: true })).toBeVisible();
     expect((await state(page)).total).toBe(total);
   });
 }

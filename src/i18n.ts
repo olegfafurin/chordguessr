@@ -42,6 +42,8 @@ export const RUSSIAN = {
   'Find the exact notes on the piano': 'Найдите точные ноты на клавиатуре',
   'Your interval palette': 'Ваш набор интервалов',
   'Each kind counts separately': 'Каждый вид считается отдельно',
+  'Choose at least 2 interval types': 'Выберите хотя бы 2 вида интервалов',
+  'Choose at least 1 interval type': 'Выберите хотя бы 1 вид интервала',
   'Always included': 'Всегда включён',
   'Your chord palette': 'Ваш набор аккордов',
   'Make it your own': 'Выберите свой набор',

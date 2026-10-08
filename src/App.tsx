@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { ArrowRight, Check, CircleHelp, Headphones, Leaf, ListMusic, LoaderCircle, Play, Plus, RotateCcw, SkipForward, Sparkles, Trophy, Volume2, X } from 'lucide-react';
-import { CHORDS, CHORD_TYPES, REQUIRED_TYPES, INTERVALS, INTERVAL_TYPES, INTERVAL_GROUPS, REQUIRED_INTERVALS, DEFAULT_CHORD_SETTINGS, DEFAULT_INTERVAL_SETTINGS, initialGame, isComplete, nextRound, startGame, submitGuess, toggleNote, type GuessType, type IntervalType, type Game } from './game';
+import { ArrowRight, Check, CircleHelp, Headphones, Leaf, ListMusic, LoaderCircle, Play, Plus, RotateCcw, SkipForward, Sparkles, Volume2, X } from 'lucide-react';
+import { CHORDS, CHORD_TYPES, REQUIRED_TYPES, INTERVALS, INTERVAL_TYPES, INTERVAL_GROUPS, DEFAULT_CHORD_SETTINGS, DEFAULT_INTERVAL_SETTINGS, canStartGame, continuePlaying, initialGame, isComplete, nextRound, startGame, submitGuess, toggleNote, type GuessType, type IntervalType, type Game } from './game';
 import { loadSession, saveSession } from './session';
 import { PianoAudio, type PlaybackKind } from './audio';
 import { Confetti, IconButton, InstrumentIcon, Keyboard, Modal, Wave } from './components';
@@ -91,7 +91,7 @@ export default function App() {
   }, [game.phase, game.total, instrumentOpen, busy]);
 
   async function begin() {
-    if (actionPending.current) return;
+    if (actionPending.current || !canStartGame(gameRef.current.settings)) return;
     actionPending.current = true;
     setBusy(true);
     setAudioError('');
@@ -125,7 +125,7 @@ export default function App() {
     finally { actionPending.current = false; setBusy(false); }
   }
 
-  async function advance() {
+  async function advance(keepPlaying = false) {
     if (actionPending.current) return;
     actionPending.current = true;
     cancelPendingPlayback();
@@ -134,8 +134,8 @@ export default function App() {
     audio.current?.stop();
     try {
       // Continue and Skip are also audio-unlocking gestures after a restored session.
-      if (!isComplete(gameRef.current)) await audio.current!.prepare();
-      setGame(current => nextRound(current));
+      if (keepPlaying || gameRef.current.endless || !isComplete(gameRef.current)) await audio.current!.prepare();
+      setGame(current => keepPlaying ? continuePlaying(current) : nextRound(current));
     } catch { setAudioError('The instrument couldn’t load. Check your connection and try again.'); }
     finally { actionPending.current = false; setBusy(false); }
   }
@@ -148,7 +148,7 @@ export default function App() {
     setGame(current => initialGame(current.settings, current.hintsSeen));
   }
   function toggleType(type: GuessType) {
-    const required: readonly GuessType[] = game.settings.mode === 'intervals' ? REQUIRED_INTERVALS : REQUIRED_TYPES;
+    const required: readonly GuessType[] = game.settings.mode === 'intervals' ? [] : REQUIRED_TYPES;
     const types: readonly GuessType[] = game.settings.mode === 'intervals' ? INTERVAL_TYPES : CHORD_TYPES;
     if (required.includes(type)) return;
     setGame(current => ({ ...current, settings: { ...current.settings, types: types.filter(candidate => candidate === type ? !current.settings.types.includes(type) : current.settings.types.includes(candidate)) } }));
@@ -223,10 +223,10 @@ export default function App() {
             <fieldset className="difficulty-options"><legend>{t('How would you like to guess?')}</legend>
               {(['easy', 'regular'] as const).map(difficulty => <label key={difficulty}><input type="radio" name="difficulty" checked={game.settings.difficulty === difficulty} disabled={busy} onChange={() => setGame(current => ({ ...current, settings: { ...current.settings, difficulty } }))} /><span><strong>{t(difficulty === 'easy' ? 'Easy' : 'Regular')}</strong><small>{t(difficulty === 'easy' ? 'Name the interval · no piano needed' : 'Find the exact notes on the piano')}</small></span></label>)}
             </fieldset>
-            <div className="section-heading"><h2>{t('Your interval palette')}</h2><span>{t('Each kind counts separately')}</span></div>
-            <div className="interval-setup-groups">{INTERVAL_GROUPS.map(group => <fieldset key={group}><legend>{text.group(group)}</legend>{INTERVAL_TYPES.filter(type => INTERVALS[type].group === group).map(type => <label key={type} className={`chord-option ${game.settings.types.includes(type) ? 'chosen' : ''} ${REQUIRED_INTERVALS.includes(type) ? 'required' : ''}`}>
-              <input type="checkbox" aria-label={text.type(type)} checked={game.settings.types.includes(type)} disabled={busy || REQUIRED_INTERVALS.includes(type)} onChange={() => toggleType(type)} />
-              <span className="chord-symbol">{INTERVALS[type].symbol}</span><span className="chord-label">{text.type(type)}{REQUIRED_INTERVALS.includes(type) && <small>{t('Always included')}</small>}</span>
+            <div className="section-heading"><h2>{t('Your interval palette')}</h2><span>{t(game.settings.difficulty === 'easy' ? 'Choose at least 2 interval types' : 'Choose at least 1 interval type')}</span></div>
+            <div className="interval-setup-groups">{INTERVAL_GROUPS.map(group => <fieldset key={group}><legend>{text.group(group)}</legend>{INTERVAL_TYPES.filter(type => INTERVALS[type].group === group).map(type => <label key={type} className={`chord-option ${game.settings.types.includes(type) ? 'chosen' : ''}`}>
+              <input type="checkbox" aria-label={text.type(type)} checked={game.settings.types.includes(type)} disabled={busy} onChange={() => toggleType(type)} />
+              <span className="chord-symbol">{INTERVALS[type].symbol}</span><span className="chord-label">{text.type(type)}</span>
               {game.settings.types.includes(type) ? <Check size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
             </label>)}</fieldset>)}</div>
           </> : <>
@@ -246,7 +246,7 @@ export default function App() {
           </>}
           </div>
           <div className="start-row"><div><strong>{t('Ready when you are.')}</strong><span>{t(intervals ? 'Each interval kind at least twice' : '15 correct chords · each type at least twice')}</span></div>
-            <IconButton label={t(busy ? 'Loading sound' : 'Start game')} icon={busy ? LoaderCircle : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} onClick={() => void begin()} disabled={busy} />
+            <IconButton label={t(busy ? 'Loading sound' : 'Start game')} icon={busy ? LoaderCircle : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} onClick={() => void begin()} disabled={busy || !canStartGame(game.settings)} />
           </div>
         </div>
         <p className="headphone-note"><Headphones size={15} aria-hidden="true" /> {t('A quiet moment and headphones go a long way.')}</p>
@@ -354,7 +354,10 @@ export default function App() {
       <span className="eyebrow">{text.celebrationFound(game.total, intervals)}</span>
       <p className="modal-intro">{t(milestone.message)}</p>
       {audioError && <p role="alert" className="error-message">{t(audioError)}</p>}
-      <div className="modal-action"><span>{t(isComplete(game) ? 'Celebrate your session' : 'Follow the next note')}</span><IconButton label={t('Continue')} icon={busy ? LoaderCircle : isComplete(game) ? Trophy : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} disabled={busy} onClick={() => void advance()} /></div>
+      {game.phase === 'finale' ? <div className="restart-actions finale-actions">
+        <div><IconButton label={t('Start a new game')} icon={RotateCcw} disabled={busy} onClick={() => { cancelPendingPlayback(); audio.current?.stop(); setRestartOpen(true); }} /><span>{t('Start a new game')}</span></div>
+        <div><IconButton label={t('Keep playing')} icon={busy ? LoaderCircle : Play} className={`primary ${busy ? 'loading' : ''}`} disabled={busy} onClick={() => void advance(true)} /><span>{t('Keep playing')}</span></div>
+      </div> : <div className="modal-action"><span>{t('Follow the next note')}</span><IconButton label={t('Continue')} icon={busy ? LoaderCircle : ArrowRight} className={`primary ${busy ? 'loading' : ''}`} disabled={busy} onClick={() => void advance()} /></div>}
     </Modal>}
   </div>;
 }

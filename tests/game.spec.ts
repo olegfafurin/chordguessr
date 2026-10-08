@@ -75,7 +75,7 @@ test('skip and confirmed restart clear selections without accidental progress lo
   expect((await state(page)).total).toBe(0);
 });
 
-test('a final celebration at 15 survives refresh and appears before completion', async ({ page }) => {
+test('a final celebration at 15 survives refresh and offers confirmed restart or continued play', async ({ page }) => {
   const game = startGame(initialGame(DEFAULT_CHORD_SETTINGS));
   await seed(page, { ...game, total: 14, round: 15, counts: { ...game.counts, major: 7, minor: 7 } });
   await chooseTarget(page);
@@ -86,10 +86,75 @@ test('a final celebration at 15 survives refresh and appears before completion',
   expect(await page.locator('.milestone-art img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await page.reload();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText('SESSION COMPLETE')).toBeVisible();
-  expect((await state(page)).phase).toBe('complete');
+  const finale = page.getByRole('dialog');
+  await expect(finale.getByRole('button')).toHaveCount(2);
+  const restart = finale.getByRole('button', { name: 'Start a new game', exact: true });
+  const keep = finale.getByRole('button', { name: 'Keep playing', exact: true });
+  const left = (await restart.boundingBox())!;
+  const right = (await keep.boundingBox())!;
+  expect(left.x).toBeLessThan(right.x);
+  expect(left.width).toBeGreaterThanOrEqual(64);
+  expect(left.height).toBeGreaterThanOrEqual(64);
+  expect(right.width).toBeGreaterThanOrEqual(64);
+  expect(right.height).toBeGreaterThanOrEqual(64);
+  await restart.click();
+  await page.getByRole('dialog', { name: 'A fresh beginning?' }).getByRole('button', { name: 'Keep playing', exact: true }).click();
+  expect((await state(page))).toMatchObject({ phase: 'finale', total: 15 });
+  await page.getByRole('dialog').getByRole('button', { name: 'Start a new game', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm new game' }).click();
+  await expect(page.getByRole('button', { name: 'Start game', exact: true })).toBeVisible();
+  expect((await state(page))).toMatchObject({ phase: 'setup', total: 0, settings: game.settings });
 });
+
+for (const mode of ['chords', 'easy', 'regular'] as const) {
+  test(`Keep playing after the ${mode} finale retains progress until a confirmed reset`, async ({ page }) => {
+    const settings = mode === 'chords'
+      ? { types: ['major', 'minor', 'augmented'] as const, inversions: true }
+      : { mode: 'intervals' as const, difficulty: mode, types: mode === 'easy' ? ['unison', 'tritone'] as const : ['unison'] as const, inversions: false };
+    const base = startGame(initialGame({ ...settings, types: [...settings.types] }));
+    const counts = { ...base.counts };
+    base.settings.types.forEach(type => { counts[type] = 2; });
+    if (mode === 'chords') counts.major = 11;
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    const finale: Game = { ...base, phase: 'finale', counts, total, round: total };
+    await seed(page, finale);
+    const keepPlaying = page.getByRole('button', { name: 'Keep playing', exact: true });
+    await expect(keepPlaying).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.reload();
+    await expect(keepPlaying).toBeVisible();
+    await keepPlaying.click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.wave')).toHaveClass(/wave-active/);
+    const continued = await state(page);
+    expect(continued).toMatchObject({ endless: true, phase: 'playing', settings: finale.settings, total, round: total + 1, counts, wrongAttempts: 0 });
+    expect(continued.target!.notes).not.toEqual(finale.target!.notes);
+    await page.reload();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.wave')).not.toHaveClass(/wave-active/);
+    if (mode === 'easy') {
+      const targetType = (await state(page)).target!.type;
+      await page.getByRole('button', { name: targetType === 'unison' ? 'Guess Unison' : 'Guess Tritone', exact: true }).click();
+    } else {
+      await chooseTarget(page);
+      await page.getByRole('button', { name: 'Submit current guess' }).click();
+    }
+    await expect.poll(async () => (await state(page)).phase).toBe('success');
+    expect((await state(page)).total).toBe(total + 1);
+    await page.reload();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect.poll(async () => (await state(page)).phase).toBe('playing');
+    expect((await state(page)).total).toBe(total + 1);
+    await page.getByRole('button', { name: 'Skip current round' }).click();
+    expect((await state(page)).total).toBe(total + 1);
+    await page.getByRole('button', { name: 'Start a new game' }).click();
+    await page.getByRole('button', { name: 'Keep playing', exact: true }).click();
+    expect((await state(page)).endless).toBe(true);
+    await page.getByRole('button', { name: 'Start a new game' }).click();
+    await page.getByRole('button', { name: 'Confirm new game' }).click();
+    expect((await state(page))).toMatchObject({ phase: 'setup', endless: false, total: 0, settings: finale.settings });
+  });
+}
 
 test('plays beyond 15 until the last type is guessed twice', async ({ page }) => {
   const game = startGame(initialGame(DEFAULT_CHORD_SETTINGS));
@@ -102,8 +167,8 @@ test('plays beyond 15 until the last type is guessed twice', async ({ page }) =>
   await expect(page.getByText('16 CHORDS FOUND')).toBeVisible();
   await page.reload();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText('SESSION COMPLETE')).toBeVisible();
+  await page.getByRole('button', { name: 'Keep playing', exact: true }).click();
+  await expect(page.getByText('ROUND 17')).toBeVisible();
   expect((await state(page)).total).toBe(16);
 });
 
@@ -289,8 +354,9 @@ test('interval setup is the default and shows only the selected game palette', a
   await page.getByRole('button', { name: 'Got it', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Intervals', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('radio', { name: /Easy/ })).toBeChecked();
-  await expect(page.getByRole('checkbox', { name: 'Minor 2nd', exact: true })).toBeDisabled();
-  await expect(page.getByRole('checkbox', { name: 'Octave', exact: true })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: 'Minor 2nd', exact: true })).toBeEnabled();
+  await expect(page.getByRole('checkbox', { name: 'Octave', exact: true })).toBeEnabled();
+  expect((await state(page)).settings.types).toEqual(['minor2', 'major2', 'minor3', 'major3', 'perfect4', 'perfect5', 'minor6', 'major6', 'octave']);
   await page.getByRole('checkbox', { name: 'Unison', exact: true }).check();
   await page.getByRole('checkbox', { name: 'Tritone', exact: true }).check();
   await page.getByRole('checkbox', { name: 'Minor 7th', exact: true }).check();
@@ -306,6 +372,61 @@ test('interval setup is the default and shows only the selected game palette', a
   await expect(page.getByRole('button', { name: 'Submit current guess' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Play current guess' })).toHaveCount(0);
   await expect(page.getByRole('group', { name: '2nd intervals', exact: true }).getByRole('button')).toHaveCount(2);
+});
+
+test('every interval is optional and mode minimums survive setup refresh', async ({ page }) => {
+  await seed(page, initialGame(undefined, true));
+  const start = page.getByRole('button', { name: 'Start game', exact: true });
+  for (const checkbox of await page.getByRole('checkbox').all()) {
+    await expect(checkbox).toBeEnabled();
+    await checkbox.uncheck();
+  }
+  await expect(start).toBeDisabled();
+  await page.reload();
+  await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(0);
+  await expect(start).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'Unison', exact: true }).check();
+  await expect(start).toBeDisabled();
+  await page.getByRole('radio', { name: /Regular/ }).check();
+  await expect(start).toBeEnabled();
+  await page.getByRole('radio', { name: /Easy/ }).check();
+  await expect(start).toBeDisabled();
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Unison', exact: true })).toBeChecked();
+  await expect(start).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'Tritone', exact: true }).check();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.locator('.interval-answer')).toHaveCount(2);
+  expect((await state(page)).settings.types).toEqual(['unison', 'tritone']);
+  await page.reload();
+  await expect(page.locator('.interval-answer')).toHaveCount(2);
+  await expect(page.locator('.wave')).not.toHaveClass(/wave-active/);
+});
+
+test('a single regular interval still requires exact notes and restores its finale', async ({ page }) => {
+  await seed(page, initialGame({ mode: 'intervals', difficulty: 'regular', types: ['unison'], inversions: false }, true));
+  await page.getByRole('button', { name: 'Start game', exact: true }).click();
+  await expect(page.locator('.piano-key')).toHaveCount(24);
+  const target = (await state(page)).target!;
+  const wrong = target.root === 48 ? 49 : 48;
+  await page.getByRole('button', { name: noteLabel(wrong), exact: true }).click();
+  await page.getByRole('button', { name: 'Submit current guess' }).click();
+  expect((await state(page)).total).toBe(0);
+  await page.getByRole('button', { name: noteLabel(wrong), exact: true }).click();
+  await chooseTarget(page);
+  await page.getByRole('button', { name: 'Submit current guess' }).click();
+  await expect(page.getByText('ROUND 02')).toBeVisible();
+  expect((await state(page)).target!.notes).not.toEqual(target.notes);
+  await page.reload();
+  expect((await state(page)).settings.types).toEqual(['unison']);
+  await chooseTarget(page);
+  await page.getByRole('button', { name: 'Submit current guess' }).click();
+  await expect(page.getByText('2 INTERVALS FOUND')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('2 INTERVALS FOUND')).toBeVisible();
+  await page.getByRole('button', { name: 'Keep playing', exact: true }).click();
+  expect((await state(page))).toMatchObject({ phase: 'playing', endless: true, total: 2, round: 3, counts: { unison: 2 } });
 });
 
 test('easy interval guesses unlock sequential playback, restore and score once', async ({ page }) => {
@@ -357,7 +478,7 @@ test('regular interval setup uses the piano and unisons schedule one voice', asy
   await expect(page.locator('.piano-key')).toHaveCount(24);
 });
 
-test('interval finale requires coverage and survives refresh before completion', async ({ page }) => {
+test('interval finale requires coverage and survives refresh before continued play', async ({ page }) => {
   const game = startGame(initialGame());
   game.target = { type: 'octave', root: 48, inversion: 0, notes: [48, 60] };
   game.settings.types.forEach(type => { game.counts[type] = 2; });
@@ -370,8 +491,8 @@ test('interval finale requires coverage and survives refresh before completion',
   await expect(page.getByText('18 INTERVALS FOUND')).toBeVisible();
   await page.reload();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText('SESSION COMPLETE')).toBeVisible();
+  await page.getByRole('button', { name: 'Keep playing', exact: true }).click();
+  await expect(page.getByText('ROUND 19')).toBeVisible();
   expect((await state(page)).total).toBe(18);
 });
 

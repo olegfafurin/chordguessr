@@ -28,7 +28,7 @@ export const INTERVALS = {
 } as const;
 export type IntervalType = keyof typeof INTERVALS;
 export const INTERVAL_TYPES = Object.keys(INTERVALS) as IntervalType[];
-export const REQUIRED_INTERVALS = INTERVAL_TYPES.filter(type => !['unison', 'tritone', 'minor7Interval', 'major7Interval'].includes(type));
+export const DEFAULT_INTERVAL_TYPES = INTERVAL_TYPES.filter(type => !['unison', 'tritone', 'minor7Interval', 'major7Interval'].includes(type));
 export const INTERVAL_GROUPS = [...new Set(INTERVAL_TYPES.map(type => INTERVALS[type].group))];
 export const DEFINITIONS = { ...CHORDS, ...INTERVALS };
 export type ChordType = keyof typeof CHORDS;
@@ -39,11 +39,11 @@ export const ALL_TYPES: GuessType[] = [...CHORD_TYPES, ...INTERVAL_TYPES];
 export type Counts = Record<GuessType, number>;
 export interface Settings { mode?: 'chords' | 'intervals'; difficulty?: 'easy' | 'regular'; types: GuessType[]; inversions: boolean }
 export const DEFAULT_CHORD_SETTINGS: Settings = { types: [...REQUIRED_TYPES], inversions: false };
-export const DEFAULT_INTERVAL_SETTINGS: Settings = { mode: 'intervals', difficulty: 'easy', types: [...REQUIRED_INTERVALS], inversions: false };
+export const DEFAULT_INTERVAL_SETTINGS: Settings = { mode: 'intervals', difficulty: 'easy', types: [...DEFAULT_INTERVAL_TYPES], inversions: false };
 export interface Target { type: GuessType; notes: number[]; root: number; inversion: number }
 export type Phase = 'setup' | 'playing' | 'success' | 'milestone' | 'finale' | 'complete';
 export interface Game {
-  version: 3;
+  version: 4;
   settings: Settings;
   phase: Phase;
   target: Target | null;
@@ -54,13 +54,20 @@ export interface Game {
   hintsSeen: boolean;
   feedback: 'none' | 'incorrect';
   wrongAttempts: number;
+  endless: boolean;
 }
 export const MILESTONE_SCORES = [5, 10] as const;
 
+export function canStartGame(settings: Settings): boolean {
+  return settings.mode === 'intervals'
+    ? new Set(settings.types).size >= (settings.difficulty === 'easy' ? 2 : 1)
+    : REQUIRED_TYPES.every(type => settings.types.includes(type));
+}
+
 export function initialGame(settings: Settings = DEFAULT_INTERVAL_SETTINGS, hintsSeen = false): Game {
-  return { version: 3, settings, phase: 'setup', target: null, selected: [],
+  return { version: 4, settings, phase: 'setup', target: null, selected: [],
     counts: Object.fromEntries(ALL_TYPES.map(type => [type, 0])) as Counts,
-    total: 0, round: 0, hintsSeen, feedback: 'none', wrongAttempts: 0 };
+    total: 0, round: 0, hintsSeen, feedback: 'none', wrongAttempts: 0, endless: false };
 }
 
 export function sameNotes(a: readonly number[], b: readonly number[]): boolean {
@@ -114,6 +121,7 @@ export function isComplete(game: Pick<Game, 'total' | 'settings' | 'counts'>): b
 }
 
 export function startGame(game: Game, random = Math.random): Game {
+  if (!canStartGame(game.settings)) return game;
   const fresh = initialGame(game.settings, true);
   return { ...fresh, phase: 'playing', round: 1, target: generateTarget(fresh.settings, fresh.counts, null, random) };
 }
@@ -133,14 +141,19 @@ export function submitGuess(game: Game, interval?: IntervalType): Game {
   const counts = { ...game.counts, [game.target.type]: game.counts[game.target.type] + 1 };
   return { ...game, total, selected: [], feedback: 'none',
     counts,
-    phase: isComplete({ ...game, total, counts }) ? 'finale' : MILESTONE_SCORES.some(score => score === total) ? 'milestone' : 'success' };
+    phase: game.endless ? 'success' : isComplete({ ...game, total, counts }) ? 'finale' : MILESTONE_SCORES.some(score => score === total) ? 'milestone' : 'success' };
 }
 
 export function nextRound(game: Game, random = Math.random): Game {
   if (!['playing', 'success', 'milestone', 'finale'].includes(game.phase)) return game;
-  if (isComplete(game)) return { ...game, phase: 'complete', selected: [] };
+  if (!game.endless && isComplete(game)) return { ...game, phase: 'complete', selected: [] };
   return { ...game, phase: 'playing', selected: [], feedback: 'none', wrongAttempts: 0, round: game.round + 1,
     target: generateTarget(game.settings, game.counts, game.target, random) };
+}
+
+export function continuePlaying(game: Game, random = Math.random): Game {
+  if (game.phase !== 'finale' || !isComplete(game)) return game;
+  return nextRound({ ...game, endless: true }, random);
 }
 
 const NOTE_NAMES = ['C', 'C sharp / D flat', 'D', 'D sharp / E flat', 'E', 'F', 'F sharp / G flat', 'G', 'G sharp / A flat', 'A', 'A sharp / B flat', 'B'];
